@@ -141,7 +141,7 @@ struct JournalView: View {
     private func summary(_ trip: Trip, _ derived: Derived) -> some View {
         let route = derived.content.route
         return VStack(alignment: .leading, spacing: 12) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), alignment: .topLeading)], alignment: .leading, spacing: 12) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), alignment: .topLeading)], alignment: .leading, spacing: 12) {
                 stat("日期", Format.day(trip.startedAt))
                 stat("起訖", "\(Format.clock(route.start ?? trip.startedAt))–\(Format.clock(route.end ?? trip.endedAt))")
                 stat(derived.hasGPX ? "距離" : "約略距離", (derived.hasGPX ? "" : "約 ") + Format.distance(route.totalDistance))

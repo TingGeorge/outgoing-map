@@ -32,6 +32,7 @@ import UIKit
     @ObservationIgnored private var lastSampleAt: Date?
     @ObservationIgnored private var sampleStartedAt = Date.distantPast
     @ObservationIgnored private var bestFix: CLLocation?
+    @ObservationIgnored private var lastFixTime = Date.distantPast
     @ObservationIgnored private var pressureKPa: Double?
     @ObservationIgnored private var relativeAltitude: Double?
     @ObservationIgnored private var pendingInterval: Int?
@@ -172,6 +173,7 @@ import UIKit
         if isSampling {
             for fix in locations where fix.horizontalAccuracy >= 0
                 && -fix.timestamp.timeIntervalSinceNow <= Self.maxFixAge
+                && fix.timestamp > lastFixTime
                 && fix.horizontalAccuracy < bestFix?.horizontalAccuracy ?? .infinity {
                 bestFix = fix
             }
@@ -192,6 +194,8 @@ import UIKit
             resumeWaiters()
             return
         }
+
+        lastFixTime = fix.timestamp
 
         let battery = UIDevice.current.batteryLevel
         var point = TrackPoint(

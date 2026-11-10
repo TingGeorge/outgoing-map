@@ -18,8 +18,9 @@ Needs only `java`/`javac` (17+), `curl`, `unzip`, `python3`.
 
 ## App notes
 
-- MBTiles rows are TMS (`tile_row = 2^z - 1 - y`). `metadata.tile_size` is the pixel size; a 512 tile at zoom z covers the same area as a 256 tile at z, so set `MKTileOverlay.tileSize` to it.
-- Tiles that rendered as one flat colour (open sea) are not stored. Their keys are in table `blank(key = z<<48 | x<<24 | tms_row, color = 0xRRGGBB)`; the colour is always the sea `#B3DDFF`. Treat a missing tile inside `bounds` as a flat `#B3DDFF` tile.
+- MBTiles rows are TMS (`tile_row = 2^z - 1 - y`). `metadata.tile_size` is the pixel size; a 512 tile at zoom z covers the same area as a standard 256 tile at z, so the app keeps `MKTileOverlay.tileSize` at 256 points and the 512 px image gives retina sharpness.
+- Tiles that rendered as one flat colour (open sea) are not stored. Their keys are in table `blank(key = z<<48 | x<<24 | tms_row, color = 0xRRGGBB)`; the colour is always the sea `#B3DDFF`. The app draws a missing tile from its nearest stored ancestor, and as flat `#B3DDFF` only when no ancestor exists.
+- `./package.sh` assembles `MapData/device/MapData` (hard links, no extra disk) to drag onto the iPhone in Finder.
 
 ## Attribution the app must show
 

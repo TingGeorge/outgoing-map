@@ -70,7 +70,7 @@ struct ImportGPXButton: View {
     @State private var picking = false
     @State private var message: String?
 
-    private static let gpx = UTType(filenameExtension: "gpx", conformingTo: .xml) ?? .xml
+    private static let gpx = [UTType(filenameExtension: "gpx"), UTType("com.topografix.gpx"), .xml].compactMap { $0 }
 
     var body: some View {
         Button("匯入 GPX 軌跡", systemImage: "point.topleft.down.to.point.bottomright.curvepath") {
@@ -82,7 +82,7 @@ struct ImportGPXButton: View {
         } message: {
             Text("從其他登山 App 匯出的 GPX，能讓路線貼著真實的山徑。")
         }
-        .fileImporter(isPresented: $picking, allowedContentTypes: [Self.gpx]) { result in
+        .fileImporter(isPresented: $picking, allowedContentTypes: Self.gpx) { result in
             Task { await importFile(result) }
         }
         .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {

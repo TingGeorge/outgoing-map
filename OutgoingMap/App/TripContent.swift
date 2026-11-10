@@ -27,7 +27,7 @@ extension TripStore {
         }
 
         let placed = PhotoPlacement.place(photos: trip.photos, on: route)
-        let pois = mapData.pois?.pois(near: route, within: Self.poiRadius) ?? []
+        let pois = (mapData.pois?.pois(near: route, within: Self.poiRadius) ?? []).filter { $0.poi.kind != "other_hiking" }
 
         return TripContent(
             trip: trip, route: route, placed: placed, nearbyPOIs: pois,

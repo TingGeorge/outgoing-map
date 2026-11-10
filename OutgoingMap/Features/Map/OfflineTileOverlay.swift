@@ -3,7 +3,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 final class OfflineTileOverlay: MKTileOverlay {
-    static let overzoomLevels = 2
+    static let overzoomLevels = 1
 
     let tiles: MBTiles?
 
@@ -11,7 +11,7 @@ final class OfflineTileOverlay: MKTileOverlay {
         self.tiles = tiles
         super.init(urlTemplate: nil)
         canReplaceMapContent = true
-        tileSize = CGSize(width: 512, height: 512)
+        tileSize = CGSize(width: 256, height: 256)
     }
 
     override func loadTile(at path: MKTileOverlayPath, result: @escaping (Data?, Error?) -> Void) {

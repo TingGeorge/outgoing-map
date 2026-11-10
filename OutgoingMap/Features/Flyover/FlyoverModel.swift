@@ -214,7 +214,7 @@ final class FlyoverModel: NSObject {
         }
 
         let forward = SIMD2(sin(heading), cos(heading))
-        var position = SIMD3(head.x - forward.x * 540, head.y + 620, head.z - forward.y * 540)
+        var position = SIMD3(head.x - forward.x * 720, head.y + 800, head.z - forward.y * 720)
         position.y = max(position.y, world.terrain.height(at: SIMD2(position.x, position.z)) + 150)
         return Pose(position: position, target: SIMD3(head.x + forward.x * 200, head.y, head.z + forward.y * 200))
     }

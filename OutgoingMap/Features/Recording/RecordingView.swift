@@ -109,20 +109,20 @@ struct RecordingView: View {
                 Section {
                     Button("結束記錄", role: .destructive) { confirmingStop = true }
                         .disabled(isStopping)
+                        .confirmationDialog("要結束這次記錄嗎？", isPresented: $confirmingStop, titleVisibility: .visible) {
+                            Button("結束記錄", role: .destructive) {
+                                isStopping = true
+                                Task {
+                                    let finished = await recorder.stop()
+                                    isStopping = false
+                                    if let finished { onFinished(finished) }
+                                }
+                            }
+                        } message: {
+                            Text("會再記錄最後一點，然後儲存這趟行程。")
+                        }
                 }
             }
-        }
-        .confirmationDialog("要結束這次記錄嗎？", isPresented: $confirmingStop, titleVisibility: .visible) {
-            Button("結束記錄", role: .destructive) {
-                isStopping = true
-                Task {
-                    let finished = await recorder.stop()
-                    isStopping = false
-                    if let finished { onFinished(finished) }
-                }
-            }
-        } message: {
-            Text("會再記錄最後一點，然後儲存這趟行程。")
         }
     }
 
