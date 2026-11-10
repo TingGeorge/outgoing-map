@@ -1,0 +1,9 @@
+MapData/
+*.mp4
+.claude/
+.build/
+build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+.DS_Store
