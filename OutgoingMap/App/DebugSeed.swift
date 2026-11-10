@@ -60,7 +60,7 @@ enum DebugSeed {
 
             for (i, spec) in photos.enumerated() {
                 let p = spec.fraction.map(position)
-                let photo = TripPhoto(takenAt: at(spec.clock), lat: p?.lat, lon: p.map { $0.lon + 0.0002 }, altitude: p?.alt, caption: spec.caption)
+                let photo = TripPhoto(takenAt: at(spec.clock), lat: p?.lat, lon: p?.lon, altitude: p?.alt, caption: spec.caption)
                 let image = scene(top: spec.top, bottom: spec.bottom, seed: Double(i))
                 try image.jpegData(compressionQuality: 0.85)!.write(to: store.photoURL(photo, in: trip))
                 try image.preparingThumbnail(of: CGSize(width: 400, height: 300))!.jpegData(compressionQuality: 0.8)!
