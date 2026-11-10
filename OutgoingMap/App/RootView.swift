@@ -1,18 +1,26 @@
 import SwiftUI
 
 struct RootView: View {
+    @Environment(TripStore.self) private var store
+    @State private var path: [UUID] = []
+    @State private var recording = false
+    @State private var launched = false
+
     var body: some View {
-        NavigationStack {
-            ContentUnavailableView(
-                "建置中",
-                systemImage: "mountain.2",
-                description: Text("登山回憶正在施工，功能即將上線。")
-            )
-            .navigationTitle("登山回憶")
+        NavigationStack(path: $path) {
+            TripListView(path: $path, recording: $recording)
+                .navigationDestination(for: UUID.self) { Destinations.journal(tripID: $0) }
+        }
+        .fullScreenCover(isPresented: $recording) {
+            Destinations.recording { trip in
+                recording = false
+                path.append(trip.id)
+            }
+        }
+        .task {
+            guard !launched else { return }
+            launched = true
+            if store.activeRecording != nil { recording = true }
         }
     }
-}
-
-#Preview {
-    RootView()
 }
