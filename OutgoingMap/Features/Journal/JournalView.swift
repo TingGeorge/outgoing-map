@@ -64,7 +64,7 @@ struct JournalView: View {
         }) { start in
             PhotoViewer(tripID: tripID, start: start.id, placed: derived?.placedByID ?? [:]) { viewerLast = $0 }
         }
-        .task(id: trip) {
+        .task(id: [trip?.hashValue ?? 0, store.revision]) {
             guard let trip else { return }
             if !diaryLoaded {
                 diary = trip.diary
@@ -93,6 +93,8 @@ struct JournalView: View {
                         description: Text("沒有軌跡也沒有照片。加入照片或匯入 GPX 後，回憶就會出現在這裡。")
                     )
                     .padding(.top, 40)
+                    importRow
+                        .padding(.horizontal)
                 } else {
                     map(derived)
                     summary(trip, derived)
@@ -100,6 +102,8 @@ struct JournalView: View {
                     flyoverEntry
                         .padding(.horizontal)
                     strip(trip, derived)
+                    importRow
+                        .padding(.horizontal)
                 }
                 diaryEditor
                     .padding(.horizontal)
@@ -215,10 +219,20 @@ struct JournalView: View {
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
         .disabled((derived?.content.route.points.count ?? 0) < 2)
-        .sheet(isPresented: $showingFlyover) {
-            ContentUnavailableView("建置中", systemImage: "view.3d", description: Text("立體播放即將推出。"))
-                .presentationDetents([.medium])
+        .fullScreenCover(isPresented: $showingFlyover) {
+            if let content = derived?.content {
+                FlyoverView(content: content)
+            }
         }
+    }
+
+    private var importRow: some View {
+        HStack(spacing: 12) {
+            AddPhotosButton(tripID: tripID)
+            ImportGPXButton(tripID: tripID)
+        }
+        .buttonStyle(.bordered)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder private var tripActions: some View {

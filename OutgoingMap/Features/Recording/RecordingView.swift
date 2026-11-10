@@ -127,19 +127,8 @@ struct RecordingView: View {
     }
 
     private var mapArea: some View {
-        let coordinate = recorder.location.map { Coordinate(lat: $0.coordinate.latitude, lon: $0.coordinate.longitude) }
-            ?? recorder.lastPoint?.coordinate
-
-        return VStack(spacing: 8) {
-            Image(systemName: "map")
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-            Text(coordinate.map(Format.coordinate) ?? "等待定位…")
-                .font(.callout.monospacedDigit())
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 240)
-        .background(Color(.tertiarySystemFill))
+        TileMapView(showsUserLocation: true)
+            .frame(height: 260)
     }
 
     private var intervalSection: some View {

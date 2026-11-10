@@ -3,6 +3,7 @@ import Observation
 
 @Observable @MainActor final class TripStore {
     private(set) var trips: [Trip] = []
+    private(set) var revision = 0
 
     let documents: URL
     var tripsDirectory: URL { documents.appending(path: "Trips") }
@@ -81,6 +82,7 @@ import Observation
     func setGPX(_ points: [TrackPoint], for trip: Trip) throws {
         try FileManager.default.createDirectory(at: folder(for: trip), withIntermediateDirectories: true)
         try TrackFile(url: folder(for: trip).appending(path: "gpx.jsonl")).write(points)
+        revision += 1
     }
 
     func photoURL(_ photo: TripPhoto, in trip: Trip) -> URL {

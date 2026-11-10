@@ -73,7 +73,7 @@ struct FlyoverView: View {
             }
 
             if model.viewer != nil {
-                PhotoViewer(content: content, store: store, selection: $model.viewer)
+                FlyoverPhotoViewer(content: content, store: store, selection: $model.viewer)
             }
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: model.popup)
@@ -251,7 +251,7 @@ private struct PhotoPopup: View {
     }
 }
 
-private struct PhotoViewer: View {
+private struct FlyoverPhotoViewer: View {
     let content: TripContent
     let store: TripStore
     @Binding var selection: UUID?
