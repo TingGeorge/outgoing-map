@@ -39,4 +39,13 @@ public final class MBTiles: Sendable {
             [Double(z), Double(x), Double(row)]
         ) { SQLiteReader.blob($0, 0) }.first
     }
+
+    public func ancestor(z: Int, x: Int, y: Int) -> (data: Data, levels: Int)? {
+        var dz = max(0, z - maxZoom)
+        while z - dz >= minZoom {
+            if let data = tile(z: z - dz, x: x >> dz, y: y >> dz) { return (data, dz) }
+            dz += 1
+        }
+        return nil
+    }
 }
