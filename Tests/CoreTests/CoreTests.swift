@@ -175,6 +175,13 @@ private func straightRoute() -> Route {
     }
     #expect(results.allSatisfy { $0 })
 
+    #expect(mbtiles.ancestor(z: 2, x: 3, y: 3)?.levels == 0)
+    #expect(mbtiles.ancestor(z: 2, x: 1, y: 1)?.levels == 1)
+    #expect(mbtiles.ancestor(z: 3, x: 1, y: 2)?.levels == 2)
+    #expect(mbtiles.ancestor(z: 3, x: 1, y: 2)?.data == Data([0x89, 0x50, 0x4E, 0x47]))
+    #expect(mbtiles.ancestor(z: 5, x: 31, y: 31)?.data == Data([1, 2]))
+    #expect(mbtiles.ancestor(z: 2, x: 0, y: 3) == nil)
+
     #expect(throws: SQLiteError.self) { try MBTiles(url: url.deletingLastPathComponent().appending(path: "missing.mbtiles")) }
 }
 
