@@ -3,8 +3,10 @@ import UIKit
 
 enum DebugSeed {
     static let ascent: [(lat: Double, lon: Double, alt: Double)] = [
-        (24.1690, 121.2853, 3150), (24.1712, 121.2846, 3180), (24.1741, 121.2839, 3255),
-        (24.1773, 121.2829, 3330), (24.1798, 121.2821, 3395), (24.1814, 121.2816, 3422),
+        (24.16740, 121.28879, 2995), (24.16897, 121.28804, 3040), (24.17171, 121.28793, 3110),
+        (24.17367, 121.28750, 3170), (24.17543, 121.28654, 3230), (24.17719, 121.28600, 3290),
+        (24.17915, 121.28514, 3340), (24.18071, 121.28342, 3390), (24.18160, 121.28257, 3415),
+        (24.18130, 121.28170, 3422),
     ]
 
     static let photos: [(clock: String, fraction: Double?, caption: String, top: UIColor, bottom: UIColor)] = [
@@ -35,7 +37,7 @@ enum DebugSeed {
 
         let start = at("06:40"), summit = at("09:25"), leave = at("09:40"), end = at("11:40")
         var trip = Trip(title: "合歡山北峰", startedAt: start, endedAt: end, intervalMinutes: 10, state: .finished)
-        trip.diary = "天還沒亮就從登山口出發，箭竹草坡被晨光染成金色，風一點都不客氣。爬上北峰的時候剛好雲海漲滿整片谷地，我在三角點旁邊坐了快二十分鐘不想走。下山起霧了，還好手機一路都在記軌跡。"
+        trip.diary = "天還沒亮就從北峰登山口出發，箭竹草坡被晨光染成金色，風一點都不客氣。爬上北峰的時候剛好雲海漲滿整片谷地，我在三角點旁邊坐了快二十分鐘不想走。下山起霧了，還好手機一路都在記軌跡。"
 
         do {
             try store.save(trip)
@@ -50,7 +52,7 @@ enum DebugSeed {
                 try store.appendPoint(TrackPoint(
                     time: time, lat: p.lat, lon: p.lon + wobble, altitude: p.alt + 4,
                     horizontalAccuracy: 8, verticalAccuracy: 6, course: time <= summit ? 345 : 165, speed: 0.6,
-                    pressureKPa: 70.1 - (p.alt - 3150) * 0.009, relativeAltitude: p.alt - 3150, steps: steps, battery: 0.92 - f * 0.1
+                    pressureKPa: 70.1 - (p.alt - 2995) * 0.009, relativeAltitude: p.alt - 2995, steps: steps, battery: 0.92 - f * 0.1
                 ), to: trip)
                 time += 600
                 steps += 780
