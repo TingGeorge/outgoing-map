@@ -10,6 +10,9 @@ struct OutgoingMapApp: App {
             RootView()
                 .environment(store)
                 .environment(mapData)
+                #if DEBUG
+                .task { DebugSeed.runIfRequested(store) }
+                #endif
         }
     }
 }
