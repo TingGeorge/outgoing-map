@@ -11,6 +11,7 @@ struct JournalView: View {
     @State private var derived: Derived?
     @State private var selection: String?
     @State private var fitRequest = 0
+    @State private var mapExpanded = false
     @State private var diary = ""
     @State private var diaryLoaded = false
     @State private var viewerStart: ViewerStart?
@@ -122,17 +123,21 @@ struct JournalView: View {
             fitRouteRequest: fitRequest,
             onActivatePin: activate
         )
-        .containerRelativeFrame(.vertical) { height, _ in height * 0.45 }
+        .containerRelativeFrame(.vertical) { height, _ in height * (mapExpanded ? 0.92 : 0.45) }
         .overlay(alignment: .topTrailing) {
             if derived.content.route.points.count > 1 {
                 Button {
-                    fitRequest += 1
+                    withAnimation(.snappy) { mapExpanded.toggle() }
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(400))
+                        fitRequest += 1
+                    }
                 } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    Image(systemName: mapExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                         .padding(10)
                         .background(.regularMaterial, in: .circle)
                 }
-                .accessibilityLabel("顯示整條路線")
+                .accessibilityLabel(mapExpanded ? "縮小地圖" : "放大地圖")
                 .padding(10)
             }
         }

@@ -62,6 +62,8 @@ final class FlyoverModel: NSObject {
         view.allowsCameraControl = true
         view.defaultCameraController.interactionMode = .orbitTurntable
         view.defaultCameraController.inertiaEnabled = true
+        view.defaultCameraController.minimumVerticalAngle = 12
+        view.defaultCameraController.maximumVerticalAngle = 88
         view.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
 
         self.world = world
