@@ -166,7 +166,8 @@
 
 .photoPin:focus-visible .photoRing {
   outline: 3px solid var(--color-accent);
-  outline-offset: 2px;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 5px var(--color-white);
 }
 
 .pinBadge {
@@ -592,6 +593,12 @@
   outline: none;
 }
 
+.diaryText:focus-visible {
+  outline: 2px dashed var(--color-leaf);
+  outline-offset: 6px;
+  border-radius: var(--radius-sm);
+}
+
 .diaryText::placeholder {
   color: var(--color-ink-muted);
 }
@@ -815,8 +822,10 @@
   outline: none;
 }
 
-.captionField textarea:focus {
+.captionField textarea:focus-visible {
   border-color: var(--color-leaf);
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .viewerActions {
@@ -830,4 +839,43 @@
   font-size: var(--text-sm);
   color: var(--color-leaf);
   font-weight: 700;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .viewer[open] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) min(380px, 46%);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: 'top panel' 'stage panel';
+  }
+
+  .viewerTop {
+    grid-area: top;
+    padding-top: calc(max(var(--safe-top), 4px) + 4px);
+    padding-bottom: 4px;
+  }
+
+  .stage {
+    grid-area: stage;
+    min-width: 0;
+    overflow: hidden;
+    padding-bottom: calc(var(--safe-bottom) + 8px);
+  }
+
+  .full {
+    max-height: 100%;
+    min-height: 0;
+  }
+
+  .viewerPanel {
+    grid-area: panel;
+    min-height: 0;
+    max-height: none;
+    width: auto;
+    max-width: none;
+    margin: 0;
+    padding-top: max(var(--safe-top), 16px);
+    border-radius: var(--radius-md) 0 0 var(--radius-md);
+    overscroll-behavior: contain;
+  }
 }

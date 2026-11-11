@@ -495,6 +495,31 @@ describe('export and import', () => {
     const traversal = zipSync({ 'manifest.json': manifest, '../evil.jpg': new Uint8Array(1), '/abs.jpg': new Uint8Array(1), 'photos/../../x.jpg': new Uint8Array(1) })
     await expect(storage.importTrip(new Blob([traversal]))).resolves.toMatchObject({ title: 't', photoCount: 0 })
   })
+
+  test('an entry that inflates past its declared size is stopped while inflating', async () => {
+    const m = { format: 'hiking-memories-trip', version: 1, exportedAt: 0, trip: { title: 't', diary: '' }, track: null, photos: [] }
+    const manifest = strToU8(JSON.stringify(m))
+
+    const lie = (zip: Uint8Array<ArrayBuffer>, originalSize: number) => {
+      const view = new DataView(zip.buffer)
+      const name = (o: number, at: number, length: number) => new TextDecoder().decode(zip.subarray(o + at, o + at + view.getUint16(o + length, true)))
+
+      for (let o = 0; o < zip.length - 4; o++) {
+        const sig = view.getUint32(o, true)
+        if (sig === 0x04034b50 && name(o, 30, 26).startsWith('photos/')) view.setUint32(o + 22, originalSize, true)
+        if (sig === 0x02014b50 && name(o, 46, 28).startsWith('photos/')) view.setUint32(o + 24, originalSize, true)
+      }
+      return new Blob([zip])
+    }
+
+    const real = 32 * 1024 * 1024
+    const lying = lie(zipSync({ 'manifest.json': manifest, 'photos/p.jpg': new Uint8Array(real) }, { level: 9 }), 1000)
+    await expect(storage.importTrip(lying)).rejects.toThrow('這個匯出檔太大，無法匯入')
+
+    const atLimit = zipSync({ 'manifest.json': manifest, 'photos/p.jpg': new Uint8Array(IMPORT_LIMITS.entryBytes) }, { level: 9 })
+    await expect(storage.importTrip(new Blob([atLimit]))).resolves.toMatchObject({ title: 't' })
+    await expect(storage.importTrip(lie(atLimit, IMPORT_LIMITS.entryBytes - 1))).rejects.toThrow('這個匯出檔太大，無法匯入')
+  })
 })
 
 describe('two tabs', () => {

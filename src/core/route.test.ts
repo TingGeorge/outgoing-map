@@ -6,6 +6,7 @@ import {
   buildRoute,
   distanceM,
   elevationProfile,
+  isRouteGap,
   nearestOnRoute,
   parseGpx,
   routeStats,
@@ -151,6 +152,44 @@ describe('buildRoute', () => {
 
     expect(route.totalDistanceM).toBeCloseTo(expected, 9)
     expect(routeStats(route)).toMatchObject({ ascentM: 50, durationMs: 64 * MIN })
+  })
+
+  const at = (northM: number, eastM: number, ele: number, time: number): TrackPoint => ({
+    lat: 24 + northM / 111_195,
+    lon: 121 + eastM / (111_195 * Math.cos(24 * (Math.PI / 180))),
+    ele,
+    time,
+  })
+
+  const walked = (points: TrackPoint[]) => points.slice(1).reduce((sum, p, i) => sum + distanceM(points[i]!, p), 0)
+  const gapCount = (points: TrackPoint[]) => points.slice(1).filter((p, i) => isRouteGap(points[i]!, p)).length
+
+  test('a drive the GPS app kept recording is a gap: only the two walks count', () => {
+    const walk1 = Array.from({ length: 31 }, (_, i) => at(i * 33.3, 0, 2000 + i * 2, t0 + i * 30_000))
+    const end = walk1.at(-1)!
+    const drive = Array.from({ length: 18 }, (_, k) => at(1000, (k + 1) * 250, 2000 - k * 25, end.time! + (k + 1) * 30_000))
+    const park = drive.at(-1)!.time! + 12_000
+    const walk2 = Array.from({ length: 31 }, (_, i) => at(1000 - i * 33.3, 4600, 1500 + i * 2, park + i * 30_000))
+    const route = buildRoute([...walk1, ...drive, ...walk2], [])
+
+    expect(walked([...walk1, ...drive, ...walk2])).toBeGreaterThan(6500)
+    expect(route.totalDistanceM).toBeCloseTo(walked(walk1) + walked(walk2), 6)
+    expect(gapCount(route.points)).toBe(1)
+    expect(routeStats(route)).toMatchObject({ ascentM: 120, descentM: 0 })
+  })
+
+  test('a short sprint and a long downhill jog stay counted', () => {
+    const walk = Array.from({ length: 11 }, (_, i) => at(i * 33.3, 0, 2000, t0 + i * 30_000))
+    const sprint = Array.from({ length: 12 }, (_, i) => at(333 + (i + 1) * 25, 0, 2000, walk.at(-1)!.time! + (i + 1) * 6000))
+    const after = Array.from({ length: 11 }, (_, i) => at(633 + (i + 1) * 33.3, 0, 2000, sprint.at(-1)!.time! + (i + 1) * 30_000))
+    const sprinted = [...walk, ...sprint, ...after]
+
+    expect(buildRoute(sprinted, []).totalDistanceM).toBeCloseTo(walked(sprinted), 6)
+    expect(gapCount(buildRoute(sprinted, []).points)).toBe(0)
+
+    const jog = Array.from({ length: 41 }, (_, i) => at(i * 75, 0, 2500 - i * 10, t0 + i * 30_000))
+    expect(buildRoute(jog, []).totalDistanceM).toBeCloseTo(3000, -1)
+    expect(routeStats(buildRoute(jog, []))).toMatchObject({ descentM: 400 })
   })
 })
 

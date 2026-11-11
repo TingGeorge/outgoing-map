@@ -1153,3 +1153,124 @@ test.describe('keyboard', () => {
     expect(await overlayLevel(page)).toBe(0)
   })
 })
+
+type Box = { x: number; y: number; width: number; height: number }
+
+const overlaps = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+
+const SIZES = [
+  [568, 320],
+  [667, 375],
+  [844, 390],
+  [932, 430],
+  [390, 844],
+  [320, 568],
+] as const
+
+test.describe('the photo viewer on short and small screens', () => {
+  test.beforeEach(async ({ page }) => {
+    await useFakeKey(page)
+  })
+
+  for (const [width, height] of SIZES) {
+    test(`${width}x${height}: photo, details and controls never overlap and every control is reachable`, async ({ page }) => {
+      await page.setViewportSize({ width, height })
+      const id = await seed(page, { photos: PHOTOS.slice(0, 2) })
+      await openTrip(page, id)
+
+      await photoButtons(page).first().click()
+      const viewer = page.getByRole('dialog', { name: '照片' })
+      const photo = viewer.getByRole('img')
+      await expect(photo).toBeVisible()
+      await page.waitForFunction(() => document.querySelector<HTMLImageElement>('dialog img')?.complete)
+
+      const box = async (l: ReturnType<typeof page.locator>) => (await l.boundingBox())!
+      const inside = (b: Box) => b.x >= 0 && b.y >= 0 && b.x + b.width <= width + 0.5 && b.y + b.height <= height + 0.5
+
+      for (const target of [viewer.getByLabel('照片說明'), viewer.getByRole('button', { name: /設為封面|這是封面/ }), viewer.getByRole('button', { name: '刪除照片' })]) {
+        await target.scrollIntoViewIfNeeded()
+        await expect(target).toBeVisible()
+        const b = await box(target)
+        expect(inside(b), 'control is inside the viewport').toBe(true)
+        expect(overlaps(await box(photo), b), 'photo does not cover the control').toBe(false)
+      }
+
+      const caption = await box(viewer.getByLabel('照片說明'))
+      const photoBox = await box(photo)
+      expect(overlaps(photoBox, caption)).toBe(false)
+
+      const close = await box(viewer.getByRole('button', { name: '關閉照片' }))
+      const count = await box(viewer.getByText('第 1 張，共 2 張'))
+      const next = await box(viewer.getByRole('button', { name: '下一張' }))
+
+      for (const b of [close, count, next]) expect(inside(b)).toBe(true)
+      expect(overlaps(close, count)).toBe(false)
+      expect(overlaps(close, photoBox)).toBe(false)
+      expect(overlaps(count, photoBox)).toBe(false)
+      expect(photoBox.width).toBeGreaterThan(100)
+      expect(photoBox.height).toBeGreaterThan(100)
+
+      await viewer.getByLabel('照片說明').fill('橫放也能寫')
+      await expect(viewer.getByLabel('照片說明')).toHaveValue('橫放也能寫')
+      await shot(page, `viewer-${width}x${height}`)
+    })
+  }
+
+  test('1280x800: the desktop layout keeps a centred panel under the photo', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const id = await seed(page, { photos: PHOTOS.slice(0, 2) })
+    await openTrip(page, id)
+
+    await photoButtons(page).first().click()
+    const viewer = page.getByRole('dialog', { name: '照片' })
+    await expect(viewer.getByRole('img')).toBeVisible()
+
+    const photo = (await viewer.getByRole('img').boundingBox())!
+    const caption = (await viewer.getByLabel('照片說明').boundingBox())!
+    expect(overlaps(photo, caption)).toBe(false)
+    expect(caption.y).toBeGreaterThan(photo.y + photo.height - 1)
+    await shot(page, 'viewer-1280x800')
+  })
+})
+
+test.describe('keyboard focus is visible on the journal controls', () => {
+  test.beforeEach(async ({ page }) => {
+    await useFakeKey(page)
+  })
+
+  const focused = (page: Page) =>
+    page.evaluate(() => {
+      const el = document.activeElement as HTMLElement
+      const ring = el.matches('button') && el.firstElementChild ? (el.firstElementChild as HTMLElement) : el
+      const c = getComputedStyle(ring)
+      return { outline: c.outlineStyle !== 'none' && parseFloat(c.outlineWidth) >= 2, shadow: c.boxShadow !== 'none' }
+    })
+
+  test('photo pins on the map and the diary and caption fields', async ({ page }) => {
+    const id = await seed(page, { photos: PHOTOS.slice(0, 2), diary: '天氣很好' })
+    await openTrip(page, id)
+
+    await page.keyboard.press('Tab')
+
+    const pin = page.locator('section[aria-label="路線地圖"]').getByRole('button', { name: /^打開照片/ }).first()
+    await expect(pin).toBeVisible()
+    await pin.focus()
+    expect((await focused(page)).outline).toBe(true)
+    await shot(page, 'focus-pin')
+
+    const diary = page.getByLabel('日記')
+    await diary.scrollIntoViewIfNeeded()
+    await page.keyboard.press('Tab')
+    await diary.focus()
+    expect((await focused(page)).outline).toBe(true)
+    await shot(page, 'focus-diary')
+    await diary.blur()
+
+    await photoButtons(page).first().click()
+    const caption = page.getByRole('dialog', { name: '照片' }).getByLabel('照片說明')
+    await page.keyboard.press('Tab')
+    await caption.focus()
+    expect((await focused(page)).outline).toBe(true)
+    await shot(page, 'focus-caption')
+  })
+})

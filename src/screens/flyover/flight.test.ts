@@ -164,6 +164,21 @@ describe('path', () => {
     const timeline = buildTimeline(path.totalM, [])
     expect(timeline.duration).toBeCloseTo(travelSeconds(path.totalM) + 1.5, 5)
   })
+
+  test('a recorded drive between two walks is one break, not many', () => {
+    const at = (northM: number, eastM: number, time: number) => ({ lat: 24 + northM / 111_195, lon: 121 + eastM / 101_580, ele: 2000, time })
+    const walk1 = Array.from({ length: 31 }, (_, i) => at(i * 33.3, 0, i * 30_000))
+    const drive = Array.from({ length: 19 }, (_, k) => at(1000, (k + 1) * 242, 900_000 + (k + 1) * 30_000))
+    const walk2 = Array.from({ length: 31 }, (_, i) => at(1000 - i * 33.3, 4600, 1_500_000 + i * 30_000))
+    const path = resamplePath(buildRoute([...walk1, ...drive, ...walk2], []))
+
+    expect(path.breaks).toHaveLength(1)
+    expect(path.totalM).toBeCloseTo(2000, -1)
+
+    const gapM = (i: number) => Math.hypot((path.lon[i]! - path.lon[i - 1]!) * 101_580, (path.lat[i]! - path.lat[i - 1]!) * 111_195)
+    expect(gapM(path.breaks[0]!)).toBeGreaterThan(4000)
+    for (let i = 1; i < path.count; i++) if (i !== path.breaks[0]) expect(gapM(i)).toBeLessThan(path.stepM * 2)
+  })
 })
 
 describe('camera clearance', () => {

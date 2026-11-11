@@ -32,10 +32,38 @@ export function distanceM(a: LatLon, b: LatLon): number {
 }
 
 export function isRouteGap(a: TrackPoint, b: TrackPoint, meters = distanceM(a, b)): boolean {
-  if (meters < GAP_MIN_M || a.time === null || b.time === null) return false
+  if ('distanceM' in a && 'distanceM' in b) return meters > 0 && a.distanceM === b.distanceM
+
+  return meters >= GAP_MIN_M && isFast(a, b, meters)
+}
+
+function isFast(a: TrackPoint, b: TrackPoint, meters: number): boolean {
+  if (a.time === null || b.time === null) return false
 
   const hours = (b.time - a.time) / 3_600_000
-  return hours <= 0 || meters / 1000 / hours > GAP_MIN_SPEED_KMH
+  return hours <= 0 ? meters > 0 : meters / 1000 / hours > GAP_MIN_SPEED_KMH
+}
+
+function fastRuns(track: TrackPoint[]): [number, number][] {
+  const runs: [number, number][] = []
+  let start = -1
+  let length = 0
+
+  for (let i = 1; i <= track.length; i++) {
+    const meters = i < track.length ? distanceM(track[i - 1]!, track[i]!) : 0
+
+    if (i < track.length && isFast(track[i - 1]!, track[i]!, meters)) {
+      if (start < 0) start = i - 1
+      length += meters
+      continue
+    }
+
+    if (start >= 0 && length >= GAP_MIN_M) runs.push([start, i - 1])
+    start = -1
+    length = 0
+  }
+
+  return runs
 }
 
 export function buildRoute(track: TrackPoint[] | null, photos: Photo[]): Route {
@@ -50,11 +78,27 @@ export function buildRoute(track: TrackPoint[] | null, photos: Photo[]): Route {
 }
 
 function toRoute(source: RouteSource, track: TrackPoint[]): Route {
+  const runs = fastRuns(track)
+  const kept: TrackPoint[] = []
+  const gapAt = new Set<number>()
+  let r = 0
+
+  for (const [i, p] of track.entries()) {
+    const run = runs[r]
+    if (run && i > run[0] && i < run[1]) continue
+
+    if (run && i === run[1]) {
+      gapAt.add(kept.length)
+      r++
+    }
+
+    kept.push(p)
+  }
+
   let total = 0
 
-  const points: RoutePoint[] = track.map((p, i) => {
-    const step = i > 0 ? distanceM(track[i - 1]!, p) : 0
-    if (!isRouteGap(track[i - 1] ?? p, p, step)) total += step
+  const points: RoutePoint[] = kept.map((p, i) => {
+    if (i > 0 && !gapAt.has(i)) total += distanceM(kept[i - 1]!, p)
     return { lat: p.lat, lon: p.lon, ele: p.ele, time: p.time, distanceM: total }
   })
 

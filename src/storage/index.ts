@@ -618,30 +618,75 @@ function readManifest(raw: Uint8Array | undefined, strFromU8: (data: Uint8Array)
   }
 }
 
-function unzipLimited(unzipSync: Awaited<ReturnType<typeof loadZip>>['unzipSync'], bytes: Uint8Array): Record<string, Uint8Array> {
+// ponytail: one push can inflate up to ~1032x its chunk (~16 MB) before the byte counter sees it; a smaller chunk tightens that at the cost of per-push overhead.
+const INFLATE_CHUNK = 16 * 1024
+
+function unzipLimited(zip: Awaited<ReturnType<typeof loadZip>>, bytes: Uint8Array): Record<string, Uint8Array> {
+  const wanted = (name: string) => name === 'manifest.json' || PHOTO_ENTRY.test(name)
+  const out: Record<string, Uint8Array> = {}
   let count = 0
   let total = 0
+  let failure = ''
 
   const tooBig = () => {
     throw new Error(MSG.tooBig)
   }
 
   try {
-    return unzipSync(bytes, {
+    zip.unzipSync(bytes, {
       filter({ name, size, originalSize }) {
         if (++count > IMPORT_LIMITS.entries) tooBig()
-        if (name !== 'manifest.json' && !PHOTO_ENTRY.test(name)) return false
+        if (!wanted(name)) return false
 
         const entry = Math.max(size, originalSize)
         total += entry
         if (entry > IMPORT_LIMITS.entryBytes || total > IMPORT_LIMITS.totalBytes) tooBig()
-        return true
+        return false
       },
     })
+
+    count = 0
+    total = 0
+
+    const unzip = new zip.Unzip((file) => {
+      if (++count > IMPORT_LIMITS.entries) failure = MSG.tooBig
+      if (failure || !wanted(file.name)) return
+
+      const limit = Math.min(file.originalSize ?? Infinity, IMPORT_LIMITS.entryBytes)
+      const chunks: Uint8Array[] = []
+      let size = 0
+
+      file.ondata = (err, data, final) => {
+        if (failure) return
+        if (err) failure = 'bad'
+        else if ((size += data.length) > limit || (total += data.length) > IMPORT_LIMITS.totalBytes) failure = MSG.tooBig
+        if (failure) return file.terminate()
+
+        chunks.push(data)
+        if (!final) return
+
+        const joined = new Uint8Array(size)
+        let at = 0
+        for (const c of chunks) joined.set(c, (at += c.length) - c.length)
+        out[file.name] = joined
+      }
+
+      file.start()
+    })
+
+    unzip.register(zip.UnzipInflate)
+
+    for (let at = 0; at < bytes.length && !failure; at += INFLATE_CHUNK) {
+      unzip.push(bytes.subarray(at, at + INFLATE_CHUNK), at + INFLATE_CHUNK >= bytes.length)
+    }
   } catch (e) {
     if (e instanceof Error && e.message === MSG.tooBig) throw e
     notArchive()
   }
+
+  if (failure === MSG.tooBig) tooBig()
+  if (failure) notArchive()
+  return out
 }
 
 export function importTrip(file: Blob): Promise<Trip> {
@@ -649,11 +694,11 @@ export function importTrip(file: Blob): Promise<Trip> {
 }
 
 async function importArchive(file: Blob): Promise<Trip> {
-  const { strFromU8, unzipSync } = await loadZip()
+  const zip = await loadZip()
   if (file.size > IMPORT_LIMITS.archiveBytes) throw new Error(MSG.tooBig)
 
-  const entries = unzipLimited(unzipSync, new Uint8Array(await file.arrayBuffer()))
-  const m = readManifest(entries['manifest.json'], strFromU8)
+  const entries = unzipLimited(zip, new Uint8Array(await file.arrayBuffer()))
+  const m = readManifest(entries['manifest.json'], zip.strFromU8)
   const now = Date.now()
   const tripId = crypto.randomUUID()
 

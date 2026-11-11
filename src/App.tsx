@@ -1,17 +1,54 @@
-import { Component, Suspense, lazy, useEffect, type ReactNode } from 'react'
+import { Component, Suspense, lazy, useEffect, type ComponentType, type ReactNode } from 'react'
 import { getKey } from './key'
 import { keepFontsOffline } from './pwa'
-import { navigate, useRoute } from './router'
+import { navigate, parseRoute, useRoute } from './router'
 import { HomeScreen } from './screens/home'
 import { WelcomeScreen } from './screens/welcome'
 import { Button, EmptyState, Ridge, Screen, Spinner, Toaster } from './ui'
 
 keepFontsOffline()
 
-const NewTripScreen = lazy(() => import('./screens/new-trip').then((m) => ({ default: m.NewTripScreen })))
-const JournalScreen = lazy(() => import('./screens/journal').then((m) => ({ default: m.JournalScreen })))
-const FlyoverScreen = lazy(() => import('./screens/flyover').then((m) => ({ default: m.FlyoverScreen })))
-const SettingsScreen = lazy(() => import('./screens/settings').then((m) => ({ default: m.SettingsScreen })))
+const RELOAD_MARK = 'chunk-reload'
+const RELOAD_WINDOW_MS = 60_000
+
+let current = parseRoute(location.hash).name
+let origin = current
+
+addEventListener('hashchange', () => {
+  origin = current
+  current = parseRoute(location.hash).name
+})
+
+function mayReload() {
+  if (navigator.onLine === false || origin === 'new') return false
+
+  try {
+    const mark = JSON.parse(sessionStorage.getItem(RELOAD_MARK) ?? 'null')
+    if (mark?.hash === location.hash && Date.now() - mark.at < RELOAD_WINDOW_MS) return false
+
+    sessionStorage.setItem(RELOAD_MARK, JSON.stringify({ hash: location.hash, at: Date.now() }))
+  } catch {
+    return false
+  }
+
+  return true
+}
+
+function lazyScreen<T extends ComponentType<any>>(load: () => Promise<{ default: T }>) {
+  return lazy(() =>
+    load().catch((e) => {
+      if (!mayReload()) throw e
+
+      location.reload()
+      return new Promise<never>(() => {})
+    }),
+  )
+}
+
+const NewTripScreen = lazyScreen(() => import('./screens/new-trip').then((m) => ({ default: m.NewTripScreen })))
+const JournalScreen = lazyScreen(() => import('./screens/journal').then((m) => ({ default: m.JournalScreen })))
+const FlyoverScreen = lazyScreen(() => import('./screens/flyover').then((m) => ({ default: m.FlyoverScreen })))
+const SettingsScreen = lazyScreen(() => import('./screens/settings').then((m) => ({ default: m.SettingsScreen })))
 
 function Loading() {
   return (
@@ -34,7 +71,9 @@ class ScreenError extends Component<{ children: ReactNode }, { failed: boolean }
     return (
       <Screen>
         <EmptyState art={<Ridge variant="banner" />} title="這個畫面沒有打開" action={<Button onClick={() => location.reload()}>重新載入</Button>}>
-          可能是網路斷了，或登山回憶剛好更新。連上網路後重新載入就好，你的回憶都還在這台裝置裡。
+          {navigator.onLine === false
+            ? '現在沒有連上網路，這個畫面還沒載入。連上網路後重新載入就好，你的回憶都還在這台裝置裡。'
+            : '可能是網路斷了，或登山回憶剛好更新。連上網路後重新載入就好，你的回憶都還在這台裝置裡。'}
         </EmptyState>
       </Screen>
     )

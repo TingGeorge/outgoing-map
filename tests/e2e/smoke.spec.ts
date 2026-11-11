@@ -162,6 +162,72 @@ test.describe('with a stored key', () => {
     await expect(page.getByRole('button', { name: '看這趟日誌' })).toBeVisible({ timeout: 30_000 })
   })
 
+  test.describe('a lazy screen whose chunk is gone after an update', () => {
+    const CHUNK = '**/src/screens/new-trip/index.tsx*'
+    const failed = (page: Page) => page.getByText('這個畫面沒有打開')
+
+    test('reloads once to the intended route and lands on the screen', async ({ page }) => {
+      await page.goto('./#/')
+      await expect(page.getByRole('heading', { level: 1, name: /想回味哪一座山/ })).toBeVisible()
+
+      let hits = 0
+      await page.route(CHUNK, (route) => (hits++ === 0 ? route.abort() : route.continue()))
+
+      await page.getByRole('link', { name: '新的回憶' }).click()
+      await expect(page.getByRole('heading', { level: 1, name: '新的回憶' })).toBeAttached()
+      await expect(page).toHaveURL(/#\/new$/)
+      await expect(failed(page)).toHaveCount(0)
+    })
+
+    test('reloads exactly once when the chunk keeps failing, then shows the error screen', async ({ page }) => {
+      await page.goto('./#/')
+      await expect(page.getByRole('heading', { level: 1, name: /想回味哪一座山/ })).toBeVisible()
+
+      let loads = 0
+      page.on('load', () => loads++)
+      await page.route(CHUNK, (route) => route.abort())
+
+      await page.getByRole('link', { name: '新的回憶' }).click()
+      await expect(failed(page)).toBeVisible()
+      await page.waitForTimeout(1500)
+      expect(loads).toBe(1)
+      await expect(failed(page)).toBeVisible()
+      await expect(page).toHaveURL(/#\/new$/)
+      await expect(page.getByRole('button', { name: '重新載入' })).toBeVisible()
+    })
+
+    test('does not reload while offline and says so', async ({ page }) => {
+      await page.goto('./#/')
+      await expect(page.getByRole('heading', { level: 1, name: /想回味哪一座山/ })).toBeVisible()
+
+      let loads = 0
+      page.on('load', () => loads++)
+      await page.route(CHUNK, (route) => route.abort())
+      await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { get: () => false, configurable: true }))
+
+      await page.getByRole('link', { name: '新的回憶' }).click()
+      await expect(page.getByText('現在沒有連上網路')).toBeVisible()
+      await page.waitForTimeout(1000)
+      expect(loads).toBe(0)
+    })
+
+    test('does not reload from under a half-filled create form', async ({ page }) => {
+      await page.goto('./#/')
+      await page.getByRole('link', { name: '新的回憶' }).click()
+      await page.locator('input[type=file]').nth(0).setInputFiles('tests/fixtures/hehuan-north.gpx')
+      await expect(page.getByText('hehuan-north.gpx')).toBeVisible()
+
+      let loads = 0
+      page.on('load', () => loads++)
+      await page.route('**/src/screens/settings/index.tsx*', (route) => route.abort())
+      await page.evaluate(() => (location.hash = '#/settings'))
+
+      await expect(failed(page)).toBeVisible()
+      await page.waitForTimeout(1000)
+      expect(loads).toBe(0)
+    })
+  })
+
   test('a sheet opened by tap shows no focus ring, by keyboard it does, and a toast shows above it', async ({ page }) => {
     await page.goto('./#/')
     const id = await seedTrip(page)
