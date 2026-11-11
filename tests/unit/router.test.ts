@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import { goBack, guardBack, href, parseRoute } from '../../src/router'
+import { goBack, guardBack, href, isBackGuarded, parseRoute } from '../../src/router'
 
 const fake = vi.hoisted(() => {
   const entries: { state: unknown }[] = [{ state: { depth: 0 } }, { state: null }]
@@ -116,4 +116,15 @@ test('leave guard: goBack releases the guard first, then leaves', async () => {
   expect(onBack).not.toHaveBeenCalled()
   expect(fake.index).toBe(1)
   expect(location.hash).toBe('#/')
+})
+
+test('isBackGuarded is true only while a guard is armed', async () => {
+  expect(isBackGuarded()).toBe(false)
+
+  const release = guardBack(() => {})
+  expect(isBackGuarded()).toBe(true)
+
+  release()
+  expect(isBackGuarded()).toBe(false)
+  await settle()
 })

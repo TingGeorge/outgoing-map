@@ -509,6 +509,7 @@ export function SettingsScreen() {
       <DataSection />
       <InstallSection />
       <AboutSection />
+      <div className={s.toastRoom} aria-hidden />
     </Screen>
   )
 }

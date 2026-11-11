@@ -1204,6 +1204,27 @@ test.describe('the photo viewer on short and small screens', () => {
       const next = await box(viewer.getByRole('button', { name: '下一張' }))
 
       for (const b of [close, count, next]) expect(inside(b)).toBe(true)
+
+      const stage = await box(viewer.locator('[class*=stage]'))
+      const prevArrow = viewer.getByRole('button', { name: '上一張' })
+      const arrows = [next]
+      await viewer.getByRole('button', { name: '下一張' }).click()
+      await expect(prevArrow).toBeVisible()
+      arrows.push(await box(prevArrow))
+      await prevArrow.click()
+      await expect(viewer.getByText('第 1 張，共 2 張')).toBeVisible()
+
+      for (const b of arrows) {
+        expect(b.x).toBeGreaterThanOrEqual(stage.x - 0.5)
+        expect(b.x + b.width).toBeLessThanOrEqual(stage.x + stage.width + 0.5)
+        expect(b.y).toBeGreaterThanOrEqual(stage.y - 0.5)
+        expect(b.y + b.height).toBeLessThanOrEqual(stage.y + stage.height + 0.5)
+        expect(b.x).toBeGreaterThanOrEqual(photoBox.x - 0.5)
+        expect(b.x + b.width).toBeLessThanOrEqual(photoBox.x + photoBox.width + 0.5)
+        expect(b.width).toBeGreaterThanOrEqual(44)
+        expect(overlaps(b, close)).toBe(false)
+        expect(overlaps(b, count)).toBe(false)
+      }
       expect(overlaps(close, count)).toBe(false)
       expect(overlaps(close, photoBox)).toBe(false)
       expect(overlaps(count, photoBox)).toBe(false)

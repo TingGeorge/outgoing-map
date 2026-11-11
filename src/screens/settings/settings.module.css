@@ -201,3 +201,7 @@
 .maskedInline {
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
 }
+
+.toastRoom {
+  height: 96px;
+}

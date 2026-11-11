@@ -82,6 +82,8 @@ interface Guard {
 }
 
 let guard: Guard | null = null
+
+export const isBackGuarded = () => guard !== null
 let ownPops: (() => void)[] = []
 
 const onGuardEntry = () => history.state?.leaveGuard === true

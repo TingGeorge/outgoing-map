@@ -1,7 +1,7 @@
 import { Component, Suspense, lazy, useEffect, type ComponentType, type ReactNode } from 'react'
 import { getKey } from './key'
 import { keepFontsOffline } from './pwa'
-import { navigate, parseRoute, useRoute } from './router'
+import { isBackGuarded, navigate, useRoute } from './router'
 import { HomeScreen } from './screens/home'
 import { WelcomeScreen } from './screens/welcome'
 import { Button, EmptyState, Ridge, Screen, Spinner, Toaster } from './ui'
@@ -11,16 +11,14 @@ keepFontsOffline()
 const RELOAD_MARK = 'chunk-reload'
 const RELOAD_WINDOW_MS = 60_000
 
-let current = parseRoute(location.hash).name
-let origin = current
+let guardedAtNavigation = false
 
 addEventListener('hashchange', () => {
-  origin = current
-  current = parseRoute(location.hash).name
+  guardedAtNavigation = isBackGuarded()
 })
 
 function mayReload() {
-  if (navigator.onLine === false || origin === 'new') return false
+  if (navigator.onLine === false || guardedAtNavigation) return false
 
   try {
     const mark = JSON.parse(sessionStorage.getItem(RELOAD_MARK) ?? 'null')

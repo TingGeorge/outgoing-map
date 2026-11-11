@@ -211,6 +211,25 @@ test.describe('with a stored key', () => {
       expect(loads).toBe(0)
     })
 
+    test('reloads to the journal after a completed create', async ({ page }) => {
+      await page.goto('./#/')
+      await page.getByRole('link', { name: '新的回憶' }).click()
+      await page.locator('input[type=file]').nth(0).setInputFiles('tests/fixtures/hehuan-north.gpx')
+      await page.getByRole('button', { name: '建立回憶' }).click()
+      await expect(page.getByRole('button', { name: '看這趟日誌' })).toBeVisible({ timeout: 30_000 })
+
+      let hits = 0
+      let loads = 0
+      page.on('load', () => loads++)
+      await page.route('**/src/screens/journal/index.tsx*', (route) => (hits++ === 0 ? route.abort() : route.continue()))
+
+      await page.getByRole('button', { name: '看這趟日誌' }).click()
+      await expect(page).toHaveURL(/#\/trip\//)
+      await expect(page.getByRole('heading', { level: 1 })).toBeAttached()
+      await expect(failed(page)).toHaveCount(0)
+      expect(loads).toBe(Math.min(hits, 1))
+    })
+
     test('does not reload from under a half-filled create form', async ({ page }) => {
       await page.goto('./#/')
       await page.getByRole('link', { name: '新的回憶' }).click()

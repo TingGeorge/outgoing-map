@@ -21,6 +21,8 @@ export const GAP_MIN_M = 1000
 
 export const GAP_MIN_SPEED_KMH = 12
 
+export const GAP_RUN_SPEED_KMH = 25
+
 const RAD = Math.PI / 180
 
 export function distanceM(a: LatLon, b: LatLon): number {
@@ -37,33 +39,47 @@ export function isRouteGap(a: TrackPoint, b: TrackPoint, meters = distanceM(a, b
   return meters >= GAP_MIN_M && isFast(a, b, meters)
 }
 
-function isFast(a: TrackPoint, b: TrackPoint, meters: number): boolean {
+function isFast(a: TrackPoint, b: TrackPoint, meters: number, kmh = GAP_MIN_SPEED_KMH): boolean {
   if (a.time === null || b.time === null) return false
 
   const hours = (b.time - a.time) / 3_600_000
-  return hours <= 0 ? meters > 0 : meters / 1000 / hours > GAP_MIN_SPEED_KMH
+  return hours <= 0 ? meters > 0 : meters / 1000 / hours > kmh
 }
 
 function fastRuns(track: TrackPoint[]): [number, number][] {
-  const runs: [number, number][] = []
-  let start = -1
-  let length = 0
+  const meters = track.map((p, i) => (i > 0 ? distanceM(track[i - 1]!, p) : 0))
+  const ms = track.map((p, i) => (i > 0 && p.time !== null && track[i - 1]!.time !== null ? Math.max(0, p.time - track[i - 1]!.time!) : 0))
 
-  for (let i = 1; i <= track.length; i++) {
-    const meters = i < track.length ? distanceM(track[i - 1]!, track[i]!) : 0
+  const jump = meters.map((m, i) => i > 0 && m >= GAP_MIN_M && isFast(track[i - 1]!, track[i]!, m))
+  const sustained = spans(meters.map((m, i) => i > 0 && isFast(track[i - 1]!, track[i]!, m, GAP_RUN_SPEED_KMH)))
+    .filter(([s, e]) => sum(meters, s, e) >= GAP_MIN_M)
 
-    if (i < track.length && isFast(track[i - 1]!, track[i]!, meters)) {
-      if (start < 0) start = i - 1
-      length += meters
-      continue
-    }
+  const cut = [...jump]
+  const runMs = sustained.reduce((total, [s, e]) => total + sum(ms, s, e), 0)
 
-    if (start >= 0 && length >= GAP_MIN_M) runs.push([start, i - 1])
-    start = -1
-    length = 0
+  if (runMs <= sum(ms, 0, track.length - 1) / 2) {
+    for (const [s, e] of sustained) cut.fill(true, s + 1, e + 1)
   }
 
-  return runs
+  return spans(cut)
+}
+
+function spans(segment: boolean[]): [number, number][] {
+  const out: [number, number][] = []
+
+  for (let i = 1; i < segment.length; i++) {
+    if (!segment[i]) continue
+    if (segment[i - 1] && out.length > 0) out.at(-1)![1] = i
+    else out.push([i - 1, i])
+  }
+
+  return out
+}
+
+function sum(meters: number[], start: number, end: number): number {
+  let total = 0
+  for (let i = start + 1; i <= end; i++) total += meters[i]!
+  return total
 }
 
 export function buildRoute(track: TrackPoint[] | null, photos: Photo[]): Route {

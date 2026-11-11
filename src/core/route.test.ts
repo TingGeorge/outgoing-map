@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest'
 import type { Photo, TrackPoint } from '../types'
 import {
   ELEVATION_HYSTERESIS_M,
+  GAP_RUN_SPEED_KMH,
   buildRoute,
   distanceM,
   elevationProfile,
@@ -190,6 +191,37 @@ describe('buildRoute', () => {
     const jog = Array.from({ length: 41 }, (_, i) => at(i * 75, 0, 2500 - i * 10, t0 + i * 30_000))
     expect(buildRoute(jog, []).totalDistanceM).toBeCloseTo(3000, -1)
     expect(routeStats(buildRoute(jog, []))).toMatchObject({ descentM: 400 })
+  })
+
+  const steady = (kmh: number, minutes: number, everyS = 30) =>
+    Array.from({ length: (minutes * 60) / everyS + 1 }, (_, i) => at(0, (i * everyS * kmh) / 3.6, 2000, t0 + i * everyS * 1000))
+
+  test('a long bike ride, a fast trail run and a pure drive keep their full distance', () => {
+    expect(GAP_RUN_SPEED_KMH).toBe(25)
+
+    const bike = steady(18, 120)
+    expect(buildRoute(bike, []).totalDistanceM).toBeCloseTo(36_000, -1)
+    expect(gapCount(buildRoute(bike, []).points)).toBe(0)
+
+    const walkIn = steady(4, 30)
+    const run = steady(13, 10).map((p) => ({ ...p, lon: p.lon + walkIn.at(-1)!.lon - 121, time: p.time! + 30 * MIN + 30_000 }))
+    const trail = [...walkIn, ...run]
+    expect(walked(run)).toBeGreaterThan(2000)
+    expect(buildRoute(trail, []).totalDistanceM).toBeCloseTo(walked(trail), 6)
+
+    const drive = steady(40, 60)
+    expect(buildRoute(drive, []).totalDistanceM).toBeCloseTo(40_000, -1)
+    expect(buildRoute(drive, []).points).toHaveLength(drive.length)
+  })
+
+  test('a noisy 1 Hz walk has no gaps', () => {
+    let seed = 1
+    const noise = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5) * 10
+    const walk = Array.from({ length: 3600 }, (_, i) => at(noise(), i * 1.2 + noise(), 2000, t0 + i * 1000))
+    const route = buildRoute(walk, [])
+
+    expect(gapCount(route.points)).toBe(0)
+    expect(route.totalDistanceM).toBeCloseTo(walked(walk), 6)
   })
 })
 

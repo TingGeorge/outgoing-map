@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import { TEXT_LIMITS, deletePhoto, getPhotoUrl, updatePhoto, updateTrip } from '../../storage'
 import type { Photo } from '../../types'
 import {
@@ -158,22 +158,24 @@ export function Viewer({ photos, photoId, tripId, coverId, onSelect, onClose, re
       </div>
 
       <div className={s.stage} onPointerDown={down} onPointerUp={up} onPointerCancel={() => (swipe.current = null)}>
-        <FullImage key={photo.id} photo={photo} />
+        <div className={s.frame} style={{ '--ar': `${photo.width} / ${photo.height}` } as CSSProperties}>
+          <FullImage key={photo.id} photo={photo} />
 
-        {prev && (
-          <span className={s.prev}>
-            <IconButton label="上一張" variant="dark" onClick={() => go(prev)}>
-              <BackIcon />
-            </IconButton>
-          </span>
-        )}
-        {next && (
-          <span className={s.next}>
-            <IconButton label="下一張" variant="dark" onClick={() => go(next)}>
-              <ChevronRightIcon />
-            </IconButton>
-          </span>
-        )}
+          {prev && (
+            <span className={s.prev}>
+              <IconButton label="上一張" variant="dark" onClick={() => go(prev)}>
+                <BackIcon />
+              </IconButton>
+            </span>
+          )}
+          {next && (
+            <span className={s.next}>
+              <IconButton label="下一張" variant="dark" onClick={() => go(next)}>
+                <ChevronRightIcon />
+              </IconButton>
+            </span>
+          )}
+        </div>
       </div>
 
       <div className={s.viewerPanel}>
