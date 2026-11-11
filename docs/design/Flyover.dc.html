@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>立體播放</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+body{margin:0}
+a{color:#24352C}a:hover{color:#B84A22}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; position: relative; overflow: hidden; background: #1C2A22; color: #24352C; font-family: 'Noto Sans TC', system-ui, sans-serif">
+
+<img src="/_blob/cca7019e0d74d473c0f4e77893b894cf" alt="空拍影像上的立體路線" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 55% 50%">
+
+<div style="position: absolute; top: 56px; left: 16px; right: 16px; display: flex; justify-content: space-between; align-items: center; gap: 10px">
+<a href="Journal.dc.html" aria-label="關閉播放" style="width: 44px; height: 44px; flex: none; border-radius: 22px; background: #FBFBF4; color: #24352C; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(0,0,0,0.25)">
+<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+</a>
+<div style="height: 44px; border-radius: 22px; padding: 0 18px; background: #FBFBF4; display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; box-shadow: 0 4px 14px rgba(0,0,0,0.25)">
+<span>09:42</span>
+<span aria-hidden="true" style="width: 4px; height: 4px; border-radius: 2px; background: #9AA89C"></span>
+<span>海拔 3422 公尺</span>
+</div>
+</div>
+
+<div style="position: absolute; top: 150px; left: 40px; width: 210px; background: #FFFFFF; padding: 10px 10px 14px 10px; border-radius: 8px; transform: rotate(-3deg); box-shadow: 0 16px 36px rgba(0,0,0,0.38); display: flex; flex-direction: column; gap: 8px">
+<svg role="img" aria-label="照片位置" viewBox="0 0 190 130" style="width: 100%; display: block; border-radius: 4px">
+<rect width="190" height="130" fill="#F6E2C6"></rect>
+<circle cx="142" cy="40" r="18" fill="#F3C48D"></circle>
+<path d="M0 90 L44 64 L78 84 L112 54 L152 82 L190 66 L190 130 L0 130 Z" fill="#9DB7A0"></path>
+<path d="M0 110 Q95 88 190 112 L190 130 L0 130 Z" fill="#7C9A7A"></path>
+</svg>
+<div style="font-family: 'LXGW WenKai TC', 'Noto Sans TC', serif; font-size: 17px; line-height: 1.4; padding: 0 4px">到了！雲剛好散開。</div>
+</div>
+<svg aria-hidden="true" viewBox="0 0 60 80" style="position: absolute; top: 312px; left: 150px; width: 60px; height: 80px">
+<path d="M8 4 Q30 30 44 66" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round"></path>
+<circle cx="46" cy="70" r="8" fill="#B84A22" stroke="#FFFFFF" stroke-width="3"></circle>
+</svg>
+
+<div style="position: absolute; left: 12px; right: 12px; bottom: 28px; background: #FBFBF4; border-radius: 30px; padding: 16px 18px 18px 18px; box-shadow: 0 12px 30px rgba(0,0,0,0.30); display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; justify-content: space-between; align-items: baseline">
+<div style="font-family: 'LXGW WenKai TC', 'Noto Sans TC', serif; font-weight: 700; font-size: 20px">合歡山北峰</div>
+<div style="font-size: 13px; color: #4E5F53">第 3 張，共 12 張</div>
+</div>
+<svg role="img" aria-label="播放進度與海拔剖面" viewBox="0 0 330 56" style="width: 100%; display: block">
+<path d="M0 48 C40 46 60 36 106 32 S160 20 192 10 S224 6 234 6 S288 30 330 46 L330 56 L0 56 Z" fill="#E3EAD2"></path>
+<path d="M0 48 C40 46 60 36 106 32 S160 20 192 10 S224 6 234 6 L234 56 L0 56 Z" fill="#C5D4AC"></path>
+<path d="M0 48 C40 46 60 36 106 32 S160 20 192 10 S224 6 234 6" fill="none" stroke="#B84A22" stroke-width="3" stroke-linecap="round"></path>
+<circle cx="234" cy="6" r="6" fill="#B84A22" stroke="#FBFBF4" stroke-width="2.5"></circle>
+</svg>
+<div style="display: flex; align-items: center; justify-content: space-between">
+<button aria-label="上一張照片" style="width: 48px; height: 48px; border: 0; border-radius: 24px; background: #E3EAD2; color: #24352C; display: flex; align-items: center; justify-content: center">
+<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 5v14l-10-7zM5 5h2.5v14H5z"></path></svg>
+</button>
+<button aria-label="暫停" style="width: 64px; height: 64px; border: 0; border-radius: 32px; background: #24352C; color: #FFFFFF; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 18px rgba(36,53,44,0.30)">
+<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4.5v16H6zM13.5 4H18v16h-4.5z"></path></svg>
+</button>
+<button aria-label="下一張照片" style="width: 48px; height: 48px; border: 0; border-radius: 24px; background: #E3EAD2; color: #24352C; display: flex; align-items: center; justify-content: center">
+<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M5 5v14l10-7zM16.5 5H19v14h-2.5z"></path></svg>
+</button>
+</div>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#B84A22","options":["#B84A22","#2F6B4F","#2B5F8A"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() {
+return { accent: this.props.accent ?? '#B84A22' };
+}
+}
+</script>
+</body>
+</html>
