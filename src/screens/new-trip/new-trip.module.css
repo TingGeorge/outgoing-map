@@ -1,0 +1,156 @@
+.top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.title {
+  font-family: var(--font-hand);
+  font-weight: 700;
+  font-size: var(--text-2xl);
+  line-height: 1.35;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.picked {
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  box-shadow: var(--shadow-soft);
+}
+
+.hint {
+  font-size: var(--text-md);
+  line-height: 1.7;
+  color: var(--color-ink-body);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.count {
+  font-weight: 700;
+}
+
+.pickedHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+}
+
+.check {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--color-moss);
+  color: var(--color-leaf);
+}
+
+.fileName {
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.facts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-md);
+  line-height: 1.6;
+  color: var(--color-ink-body);
+}
+
+.failures {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.failures li {
+  display: flex;
+  flex-direction: column;
+}
+
+.summary {
+  gap: var(--space-3);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-soft);
+}
+
+.summaryHead {
+  font-family: var(--font-hand);
+  font-weight: 700;
+  font-size: var(--text-xl);
+}
+
+.counts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.counts div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.counts dt {
+  color: var(--color-ink-body);
+}
+
+.counts dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.progressWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.progressLabel {
+  font-size: var(--text-sm);
+  color: var(--color-ink-muted);
+}
+
+.track {
+  height: 10px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: var(--color-moss-strong);
+}
+
+.fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-leaf);
+}
