@@ -114,3 +114,51 @@ export const PauseIcon = solid(<path d="M6 4h4.5v16H6zM13.5 4H18v16h-4.5z" />)
 export const PrevIcon = solid(<path d="M19 5v14l-10-7zM5 5h2.5v14H5z" />)
 
 export const NextIcon = solid(<path d="M5 5v14l10-7zM16.5 5H19v14h-2.5z" />)
+
+export const MoreIcon = solid(
+  <>
+    <circle cx="5" cy="12" r="2" />
+    <circle cx="12" cy="12" r="2" />
+    <circle cx="19" cy="12" r="2" />
+  </>,
+)
+
+export const ShareIcon = stroke(<path d="M12 15V4M8 8l4-4 4 4M6 12v7a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-7" />, 2)
+
+export const MapIcon = stroke(<path d="M3.5 6.5l5.5-2 6 2 5.5-2v13l-5.5 2-6-2-5.5 2zM9 4.5v13M15 6.5v13" />, 2)
+
+export const MountainIcon = stroke(<path d="M2.5 19l6.5-11 4 6.5 2.5-3.5 6 8zM9 8l-1.5 2.5L9 10l1.5 1z" />, 2)
+
+export const CalendarIcon = stroke(
+  <>
+    <rect x="4" y="5.5" width="16" height="14.5" rx="2.5" />
+    <path d="M4 10h16M8.5 3.5v4M15.5 3.5v4" />
+  </>,
+  2,
+)
+
+export const ClockIcon = stroke(
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5.5l3.5 2" />
+  </>,
+  2,
+)
+
+export const InfoIcon = stroke(
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v5.5M12 7.5v.01" />
+  </>,
+  2,
+)
+
+export const KeyIcon = stroke(
+  <>
+    <circle cx="8" cy="15" r="4" />
+    <path d="M11 12l8.5-8.5M16 7l2.5 2.5M14 9l2 2" />
+  </>,
+  2,
+)
+
+export const WarningIcon = stroke(<path d="M12 4L2.8 19.5h18.4zM12 10v4.5M12 17.2v.01" />, 2)

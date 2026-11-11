@@ -7,6 +7,8 @@ export default defineConfig({
 
   server: { strictPort: true },
 
+  optimizeDeps: { include: ['idb', 'exifr', 'fflate', 'maplibre-gl'] },
+
   plugins: [
     react(),
 

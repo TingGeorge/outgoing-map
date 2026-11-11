@@ -1,8 +1,19 @@
-import { useId, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react'
+import {
+  useEffect,
+  useId,
+  useRef,
+  useSyncExternalStore,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type TextareaHTMLAttributes,
+} from 'react'
+import { AlertIcon, CheckIcon, CloseIcon, InfoIcon, WarningIcon } from './icons'
+import { getToasts, subscribeToasts, type ToastTone } from './toast'
 import s from './ui.module.css'
 
 export * from './icons'
 export * from './format'
+export { toast, type ToastTone } from './toast'
 
 function cx(...names: (string | false | null | undefined)[]) {
   return names.filter(Boolean).join(' ')
@@ -282,5 +293,332 @@ export function TextArea({ label, value, onChange, hint, error, ...rest }: TextA
         </div>
       )}
     </div>
+  )
+}
+
+interface ModalProps {
+  open: boolean
+  onClose: () => void
+  kind: 'dialog' | 'sheet'
+  labelledBy?: string
+  label?: string
+  children: ReactNode
+}
+
+function Modal({ open, onClose, kind, labelledBy, label, children }: ModalProps) {
+  const ref = useRef<HTMLDialogElement>(null)
+  const pressedOnBackdrop = useRef(false)
+  const opener = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    const dialog = ref.current
+    if (!dialog) return
+    if (open && !dialog.open) {
+      opener.current = document.activeElement as HTMLElement | null
+      dialog.showModal()
+    }
+    if (!open && dialog.open) {
+      dialog.close()
+      opener.current?.focus()
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const before = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = before
+    }
+  }, [open])
+
+  return (
+    <dialog
+      ref={ref}
+      className={cx(s.modal, s[kind])}
+      aria-labelledby={labelledBy}
+      aria-label={labelledBy ? undefined : label}
+      onCancel={(e) => {
+        e.preventDefault()
+        onClose()
+      }}
+      onPointerDown={(e) => {
+        pressedOnBackdrop.current = e.target === e.currentTarget
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && pressedOnBackdrop.current) onClose()
+      }}
+    >
+      {open && children}
+    </dialog>
+  )
+}
+
+export interface DialogProps {
+  open: boolean
+  onClose: () => void
+  title: string
+  children?: ReactNode
+  actions?: ReactNode
+}
+
+export function Dialog({ open, onClose, title, children, actions }: DialogProps) {
+  const titleId = useId()
+
+  return (
+    <Modal open={open} onClose={onClose} kind="dialog" labelledBy={titleId}>
+      <div className={s.dialogBody}>
+        <h2 id={titleId} className={s.dialogTitle}>
+          {title}
+        </h2>
+        {children && <div className={s.dialogText}>{children}</div>}
+        {actions && <div className={s.dialogActions}>{actions}</div>}
+      </div>
+    </Modal>
+  )
+}
+
+export interface ConfirmDialogProps {
+  open: boolean
+  title: string
+  message: ReactNode
+  confirmLabel: string
+  cancelLabel?: string
+  danger?: boolean
+  busy?: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}
+
+export function ConfirmDialog({
+  open,
+  title,
+  message,
+  confirmLabel,
+  cancelLabel = '取消',
+  danger = false,
+  busy = false,
+  onConfirm,
+  onCancel,
+}: ConfirmDialogProps) {
+  const icon = busy ? <span className={s.ring} aria-hidden="true" /> : danger ? <WarningIcon size={20} /> : undefined
+
+  return (
+    <Dialog
+      open={open}
+      onClose={busy ? () => {} : onCancel}
+      title={title}
+      actions={
+        <>
+          <Button variant="ghost" onClick={onCancel} disabled={busy}>
+            {cancelLabel}
+          </Button>
+          <Button variant={danger ? 'primary' : 'dark'} icon={icon} onClick={onConfirm} disabled={busy}>
+            {confirmLabel}
+          </Button>
+        </>
+      }
+    >
+      <span className={s.confirmMessage}>
+        {danger && (
+          <span className={s.confirmIcon}>
+            <WarningIcon size={22} />
+          </span>
+        )}
+        <span>{message}</span>
+      </span>
+    </Dialog>
+  )
+}
+
+export interface SheetProps {
+  open: boolean
+  onClose: () => void
+  title?: string
+  children: ReactNode
+}
+
+export function Sheet({ open, onClose, title, children }: SheetProps) {
+  const titleId = useId()
+
+  return (
+    <Modal open={open} onClose={onClose} kind="sheet" labelledBy={title ? titleId : undefined} label="選項">
+      <div className={s.sheetBody}>
+        <div className={s.sheetHead}>
+          {title && (
+            <h2 id={titleId} className={s.sheetTitle}>
+              {title}
+            </h2>
+          )}
+          <span className={s.sheetClose}>
+            <IconButton label="關閉" variant="moss" onClick={onClose}>
+              <CloseIcon size={20} />
+            </IconButton>
+          </span>
+        </div>
+        <div className={s.sheetScroll}>{children}</div>
+      </div>
+    </Modal>
+  )
+}
+
+export interface ActionRowProps {
+  icon?: ReactNode
+  label: string
+  hint?: string
+  danger?: boolean
+  onClick?: () => void
+  href?: string
+  disabled?: boolean
+}
+
+export function ActionRow({ icon, label, hint, danger = false, onClick, href, disabled = false }: ActionRowProps) {
+  const className = cx(s.actionRow, danger && s.rowDanger)
+  const body = (
+    <>
+      {icon && <span className={s.rowIcon}>{icon}</span>}
+      <span className={s.rowText}>
+        <span className={s.rowLabel}>{label}</span>
+        {hint && <span className={s.rowHint}>{hint}</span>}
+      </span>
+    </>
+  )
+
+  if (href !== undefined && !disabled) {
+    return (
+      <a className={className} href={href} onClick={onClick}>
+        {body}
+      </a>
+    )
+  }
+
+  return (
+    <button className={className} type="button" onClick={onClick} disabled={disabled}>
+      {body}
+    </button>
+  )
+}
+
+const toneIcon = { info: InfoIcon, success: CheckIcon, warning: WarningIcon, error: AlertIcon }
+
+export interface NoticeProps {
+  tone: ToastTone
+  title?: string
+  children: ReactNode
+  action?: ReactNode
+}
+
+export function Notice({ tone, title, children, action }: NoticeProps) {
+  const Icon = toneIcon[tone]
+
+  return (
+    <div className={cx(s.notice, s[`notice-${tone}`])} role={tone === 'error' ? 'alert' : 'status'}>
+      <span className={s.noticeIcon}>
+        <Icon size={22} />
+      </span>
+      <div className={s.noticeBody}>
+        {title && <strong className={s.noticeTitle}>{title}</strong>}
+        <div>{children}</div>
+        {action && <div className={s.noticeAction}>{action}</div>}
+      </div>
+    </div>
+  )
+}
+
+export function Toaster() {
+  const items = useSyncExternalStore(subscribeToasts, getToasts)
+
+  return (
+    <div className={s.toaster} aria-live="polite">
+      {items.map((t) => {
+        const Icon = toneIcon[t.tone]
+
+        return (
+          <div key={t.id} className={s.toast}>
+            <span className={s[`toastIcon-${t.tone}`]}>
+              <Icon size={20} />
+            </span>
+            <span>{t.message}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+export function Spinner({ label }: { label: string }) {
+  return (
+    <span className={s.spinner} role="status">
+      <span className={s.ring} aria-hidden="true" />
+      <span className="visually-hidden">{label}</span>
+    </span>
+  )
+}
+
+export interface ProgressBarProps {
+  value: number
+  max: number
+  label: string
+}
+
+export function ProgressBar({ value, max, label }: ProgressBarProps) {
+  return (
+    <div className={s.progressWrap}>
+      <span className={s.progressLabel}>{label}</span>
+      <progress className={s.progress} value={value} max={max} aria-label={label} />
+    </div>
+  )
+}
+
+export interface EmptyStateProps {
+  art?: ReactNode
+  title: string
+  children?: ReactNode
+  action?: ReactNode
+}
+
+export function EmptyState({ art, title, children, action }: EmptyStateProps) {
+  return (
+    <div className={s.empty}>
+      {art && <div className={s.emptyArt}>{art}</div>}
+      <h2 className={s.emptyTitle}>{title}</h2>
+      {children && <p className={s.emptyText}>{children}</p>}
+      {action}
+    </div>
+  )
+}
+
+export interface FilePickerProps {
+  accept?: string
+  multiple?: boolean
+  onFiles: (files: File[]) => void
+  children: ReactNode
+  variant?: ButtonProps['variant']
+  icon?: ReactNode
+  block?: boolean
+  disabled?: boolean
+}
+
+export function FilePicker({ accept, multiple, onFiles, children, variant, icon, block, disabled }: FilePickerProps) {
+  const input = useRef<HTMLInputElement>(null)
+
+  return (
+    <>
+      <Button variant={variant} icon={icon} block={block} disabled={disabled} onClick={() => input.current?.click()}>
+        {children}
+      </Button>
+      <input
+        ref={input}
+        type="file"
+        hidden
+        accept={accept}
+        multiple={multiple}
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? [])
+          e.target.value = ''
+          if (files.length) onFiles(files)
+        }}
+      />
+    </>
   )
 }

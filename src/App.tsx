@@ -7,8 +7,9 @@ import { JournalScreen } from './screens/journal'
 import { NewTripScreen } from './screens/new-trip'
 import { SettingsScreen } from './screens/settings'
 import { WelcomeScreen } from './screens/welcome'
+import { Toaster } from './ui'
 
-export function App() {
+function Routes() {
   const route = useRoute()
   const needsKey = !getKey() && route.name !== 'welcome' && route.name !== 'settings'
 
@@ -41,4 +42,13 @@ export function App() {
     case 'not-found':
       return null
   }
+}
+
+export function App() {
+  return (
+    <>
+      <Routes />
+      <Toaster />
+    </>
+  )
 }
