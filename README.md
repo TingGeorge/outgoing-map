@@ -23,6 +23,7 @@
 | `npm run typecheck` | TypeScript 檢查 |
 | `npm run test` | 單元測試（Vitest，happy-dom） |
 | `npm run e2e` | 端對端測試（Playwright，chromium 與 webkit，390×844）；換埠用 `E2E_PORT=5190 npm run e2e` |
+| `npm run build && npx playwright test -c playwright.build.config.ts` | 針對建置結果（以 `/outgoing-map/` 子路徑提供，埠 5193）測 PWA：manifest、Service Worker、離線重新載入 |
 
 網址用 hash 路由：`#/welcome` 金鑰教學、`#/` 首頁、`#/new` 建立行程、`#/trip/:id` 日誌、`#/trip/:id/fly` 立體播放、`#/settings` 設定。裝置上沒有金鑰時一律導到 `#/welcome`。
 
@@ -57,4 +58,8 @@ git checkout swift-final
 
 ## 授權
 
-景點資料 © OpenStreetMap contributors，採 ODbL 授權，整理自 Rudy Chung 的魯地圖 MOI.OSM Taiwan TOPO (https://rudymap.tw)。
+程式碼採 MIT 授權，見 `LICENSE`。
+
+`data/poi.sqlite` 與由它產生的景點資料 © OpenStreetMap contributors，採 ODbL 授權，整理自 Rudy Chung 的魯地圖 MOI.OSM Taiwan TOPO (https://rudymap.tw)。
+
+地圖圖磚與影像屬於各自的提供者（Thunderforest、OpenStreetMap contributors、內政部國土測繪中心，以及地形資料來源），不在本授權範圍內。

@@ -1,0 +1,165 @@
+.top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--touch);
+}
+
+.progress {
+  display: flex;
+  gap: 6px;
+}
+
+.seg {
+  width: 28px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-ridge-mid);
+}
+
+.segOn {
+  background: var(--color-ink);
+}
+
+.stepLabel {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-ink-muted);
+}
+
+.titles {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.title {
+  font-family: var(--font-hand);
+  font-weight: 700;
+  font-size: var(--text-3xl);
+  line-height: 1.35;
+}
+
+.title:focus {
+  outline: none;
+}
+
+.body {
+  font-size: var(--text-md);
+  line-height: 1.8;
+  color: var(--color-ink-body);
+}
+
+.steps {
+  margin: 0;
+  padding: 18px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--color-card);
+  border-radius: var(--radius-md);
+}
+
+.steps li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-size: var(--text-md);
+  line-height: 1.7;
+}
+
+.num {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 14px;
+  background: var(--color-moss);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 28px;
+  text-align: center;
+}
+
+.note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  color: var(--color-ink-body);
+}
+
+.note svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--color-leaf);
+}
+
+.figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.figure svg {
+  width: 100%;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft);
+}
+
+.figure figcaption {
+  font-size: var(--text-xs);
+  color: var(--color-ink-muted);
+  text-align: center;
+}
+
+.actions {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: var(--space-4);
+}
+
+.tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.status {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  min-height: 28px;
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  color: var(--color-ink-muted);
+}
+
+.status svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.ok {
+  color: var(--color-leaf);
+  font-weight: 700;
+}
+
+.bad {
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
