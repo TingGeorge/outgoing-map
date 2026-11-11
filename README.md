@@ -19,6 +19,7 @@
 | 指令 | 用途 |
 |---|---|
 | `npm run dev` | 開發伺服器，預設 5173；換埠用 `npm run dev -- --port 5180` |
+| `node scripts/build-poi.mjs` | 由 `data/poi.sqlite` 重新產生 `public/poi.json`（需要 `sqlite3` 指令） |
 | `npm run build` / `npm run preview` | 型別檢查後建置到 `dist/`；預覽建置結果 |
 | `npm run typecheck` | TypeScript 檢查 |
 | `npm run test` | 單元測試（Vitest，happy-dom） |
