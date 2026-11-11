@@ -1,9 +1,5 @@
-/MapData/
 *.mp4
 .claude/
-.build/
-build/
-DerivedData/
-xcuserdata/
-*.xcuserstate
+node_modules/
+dist/
 .DS_Store
