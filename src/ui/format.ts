@@ -21,6 +21,28 @@ export function formatDate(ms: number, withYear = false): string {
   return withYear ? `${part('year')} 年 ${day}` : day
 }
 
+export function formatDateRange(startMs: number | null, endMs: number | null, withYear = false): string {
+  if (startMs === null || endMs === null || endMs < startMs) {
+    const only = startMs ?? endMs
+    return only === null ? '' : formatDate(only, withYear)
+  }
+
+  const parts = (ms: number) => {
+    const all = dateParts.formatToParts(ms)
+    const part = (type: string) => all.find((p) => p.type === type)?.value ?? ''
+    return { year: part('year'), month: part('month'), day: part('day'), weekday: part('weekday') }
+  }
+
+  const a = parts(startMs)
+  const b = parts(endMs)
+  const start = formatDate(startMs, withYear || a.year !== b.year)
+
+  if (a.year !== b.year) return `${start} – ${formatDate(endMs, true)}`
+  if (a.month !== b.month) return `${start} – ${formatDate(endMs)}`
+  if (a.day !== b.day) return `${start} – ${b.day} 日　${b.weekday}`
+  return start
+}
+
 export function formatTime(ms: number): string {
   return clock.format(ms)
 }

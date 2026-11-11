@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react'
-import { deletePhoto, getPhotoUrl, updatePhoto, updateTrip } from '../../storage'
+import { TEXT_LIMITS, deletePhoto, getPhotoUrl, updatePhoto, updateTrip } from '../../storage'
 import type { Photo } from '../../types'
 import {
   BackIcon,
@@ -16,6 +16,9 @@ import {
   formatMetres,
   formatTime,
 } from '../../ui'
+import { useAutosave } from './drafts'
+import { useBackToClose } from './overlays'
+import { release } from './urls'
 import { PLACEMENT, photoAlt, photoEle } from './text'
 import s from './journal.module.css'
 
@@ -30,6 +33,7 @@ interface Props {
 }
 
 const SWIPE_PX = 50
+const CAPTION_DEBOUNCE_MS = 800
 
 export function Viewer({ photos, photoId, tripId, coverId, onSelect, onClose, reload }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -42,6 +46,16 @@ export function Viewer({ photos, photoId, tripId, coverId, onSelect, onClose, re
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+
+  useBackToClose(confirm && !busy, () => setConfirm(false))
+
+  const [opener] = useState(() => document.activeElement as HTMLElement | null)
+
+  useEffect(() => {
+    return () => {
+      if (opener?.isConnected) opener.focus({ preventScroll: true })
+    }
+  }, [opener])
 
   useEffect(() => {
     const dialog = ref.current
@@ -206,6 +220,7 @@ export function Viewer({ photos, photoId, tripId, coverId, onSelect, onClose, re
 function FullImage({ photo }: { photo: Photo }) {
   const [url, setUrl] = useState<string>()
   const [failed, setFailed] = useState(false)
+  const img = useRef<HTMLImageElement | null>(null)
 
   useEffect(() => {
     let gone = false
@@ -223,47 +238,26 @@ function FullImage({ photo }: { photo: Photo }) {
 
     return () => {
       gone = true
-      if (created) URL.revokeObjectURL(created)
+      if (created) release(created, img.current)
     }
   }, [photo.id])
 
   if (failed) return <p className={s.viewerFail}>這張照片讀不出來。</p>
   if (!url) return <Spinner label="照片載入中" />
 
-  return <img className={s.full} src={url} alt={photoAlt(photo)} draggable={false} />
+  return <img ref={(n) => void (n && (img.current = n))} className={s.full} src={url} alt={photoAlt(photo)} draggable={false} />
 }
 
 function Caption({ photo, reload }: { photo: Photo; reload: () => Promise<void> }) {
-  const [text, setText] = useState(photo.caption)
-  const [state, setState] = useState<'idle' | 'saved' | 'error'>('idle')
-  const saved = useRef(photo.caption)
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const latest = useRef(text)
-  latest.current = text
-
-  const flush = useCallback(async () => {
-    clearTimeout(timer.current)
-
-    const value = latest.current
-    if (value === saved.current) return
-
-    try {
-      await updatePhoto(photo.id, { caption: value })
-      saved.current = value
-      setState('saved')
+  const save = useCallback(
+    async (caption: string) => {
+      await updatePhoto(photo.id, { caption })
       await reload()
-    } catch {
-      setState('error')
-    }
-  }, [photo.id, reload])
+    },
+    [photo.id, reload],
+  )
 
-  useEffect(() => () => void flush(), [flush])
-
-  useEffect(() => {
-    if (latest.current !== saved.current) return
-    saved.current = photo.caption
-    setText(photo.caption)
-  }, [photo.caption])
+  const { text, status: state, change, flush } = useAutosave({ trip: photo.tripId, photo: photo.id }, photo.caption, save, CAPTION_DEBOUNCE_MS)
 
   return (
     <div className={s.captionField}>
@@ -272,13 +266,9 @@ function Caption({ photo, reload }: { photo: Photo; reload: () => Promise<void> 
         id={`caption-${photo.id}`}
         value={text}
         rows={2}
+        maxLength={TEXT_LIMITS.caption}
         placeholder="寫一句話，記下這一刻"
-        onChange={(e) => {
-          setText(e.target.value)
-          setState('idle')
-          clearTimeout(timer.current)
-          timer.current = setTimeout(() => void flush(), 800)
-        }}
+        onChange={(e) => change(e.target.value)}
         onBlur={() => void flush()}
       />
       <span className={s.saveState} role="status">

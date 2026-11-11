@@ -8,6 +8,8 @@ import { getPhotoUrl } from '../../storage'
 import type { Photo, PoiOnRoute, Route } from '../../types'
 import { Button, CloseIcon, ExpandIcon, IconButton, Notice, formatMetres } from '../../ui'
 import { photoAlt } from './text'
+import { routeSections } from './sections'
+import { release } from './urls'
 import s from './journal.module.css'
 
 type Problem = 'load' | 'webgl' | 'key' | 'offline'
@@ -34,8 +36,12 @@ const LOCALE = {
   'CooperativeGesturesHandler.MobileHelpText': '用兩指移動地圖，或按放大鈕',
 }
 
-function padding(expanded: boolean) {
-  return expanded ? { top: 100, bottom: 64, left: 64, right: 64 } : { top: 84, bottom: 76, left: 52, right: 52 }
+function padding(expanded: boolean, map?: MlMap) {
+  const attribution = map?.getContainer().querySelector<HTMLElement>('.maplibregl-ctrl-attrib')?.offsetHeight ?? 0
+
+  return expanded
+    ? { top: 100, bottom: Math.max(64, attribution + 30), left: 64, right: 64 }
+    : { top: 96, bottom: Math.max(76, attribution + 62), left: 52, right: 52 }
 }
 
 function bounds(route: Route): LngLatBoundsLike {
@@ -63,7 +69,7 @@ function fit(map: MlMap, route: Route, expanded: boolean, animate: boolean) {
     return
   }
 
-  map.fitBounds(bounds(route), { padding: padding(expanded), maxZoom: 16, animate })
+  map.fitBounds(bounds(route), { padding: padding(expanded, map), maxZoom: 16, animate })
 }
 
 function el(className: string | undefined) {
@@ -79,41 +85,57 @@ interface Entry {
   flip?: boolean
 }
 
+const PLACES = [s.flipped, s.toLeft, s.toRight].filter((c): c is string => !!c)
+
+const overlaps = (a: DOMRect, b: DOMRect) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+
+const shown = (entries: Entry[]) => entries.filter((e) => e.marker.getElement().style.visibility !== 'hidden').map((e) => e.box.getBoundingClientRect())
+
 // ponytail: greedy O(n²) overlap scan over marker rects after each move; fine for a few hundred markers, a grid bucket would be the upgrade.
-function thin(entries: Entry[], blockers: Entry[] = []) {
-  const kept: { rect: DOMRect; entry: Entry; hidden: number }[] = blockers
-    .filter((b) => b.marker.getElement().style.visibility !== 'hidden')
-    .map((b) => ({ rect: b.box.getBoundingClientRect(), entry: { ...b, badge: undefined }, hidden: 0 }))
+function thin(entries: Entry[], blockers: DOMRect[], area?: DOMRect) {
+  const kept: { rect: DOMRect; entry?: Entry; hidden: number }[] = blockers.map((rect) => ({ rect, hidden: 0 }))
 
   for (const entry of entries) entry.marker.getElement().style.visibility = ''
 
-  const overlap = (r: DOMRect) => kept.find(({ rect: k }) => r.left < k.right && r.right > k.left && r.top < k.bottom && r.bottom > k.top)
+  const outside = area && { rect: area, hidden: 0 }
+  const overlap = (r: DOMRect) =>
+    kept.find(({ rect }) => overlaps(r, rect)) ?? (outside && (r.left < area.left || r.right > area.right || r.top < area.top) ? outside : undefined)
 
   for (const entry of entries) {
-    entry.box.classList.remove(s.flipped ?? '')
-    let r = entry.box.getBoundingClientRect()
-    let hit = overlap(r)
+    const places = entry.flip ? PLACES : []
+    let r: DOMRect | undefined
+    let hit: (typeof kept)[number] | undefined
 
-    if (hit && entry.flip) {
-      entry.box.classList.add(s.flipped ?? '')
+    for (const place of ['', ...places]) {
+      entry.box.classList.remove(...places)
+      if (place) entry.box.classList.add(place)
       r = entry.box.getBoundingClientRect()
       hit = overlap(r)
+      if (!hit) break
     }
 
     if (!hit) {
-      kept.push({ rect: r, entry, hidden: 0 })
+      kept.push({ rect: r!, entry, hidden: 0 })
       continue
     }
 
+    if (places.length) entry.box.classList.remove(...places)
     entry.marker.getElement().style.visibility = 'hidden'
-    if (entry.badge && hit.entry.badge) hit.hidden++
+    if (entry.badge && hit.entry?.badge) hit.hidden++
   }
 
   for (const { entry, hidden } of kept) {
-    if (!entry.badge) continue
+    if (!entry?.badge) continue
     entry.badge.textContent = hidden ? `+${hidden}` : ''
     entry.badge.hidden = hidden === 0
   }
+}
+
+function chrome(section: Element | null | undefined): DOMRect[] {
+  if (!section) return []
+
+  const nodes = section.querySelectorAll(`.${s.controls} button, .${s.controls} a, .${s.expand}, .maplibregl-ctrl-attrib`)
+  return Array.from(nodes, (n) => n.getBoundingClientRect()).filter((r) => r.width > 0)
 }
 
 export function MapHero({ route, photos, pois, expanded, onExpand, onCollapse, onOpenPhoto, scrub, controls }: Props) {
@@ -209,9 +231,10 @@ export function MapHero({ route, photos, pois, expanded, onExpand, onCollapse, o
     const current = mapRef.current
     if (!ready || !current) return
 
-    const coordinates = route.points.map((p) => [p.lon, p.lat])
+    const lines = routeSections(route).map((section) => section.map((p) => [p.lon, p.lat]))
     const source = current.map.getSource(ROUTE_SOURCE) as GeoJSONSource | undefined
-    source?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } })
+    const geometry = lines.length > 1 ? ({ type: 'MultiLineString', coordinates: lines } as const) : ({ type: 'LineString', coordinates: lines[0] ?? [] } as const)
+    source?.setData({ type: 'Feature', properties: {}, geometry })
 
     fit(current.map, route, latest.current.expanded, false)
   }, [ready, routeKey])
@@ -225,7 +248,7 @@ export function MapHero({ route, photos, pois, expanded, onExpand, onCollapse, o
 
     const { map, lib } = current
     const entries: Entry[] = []
-    const urls: string[] = []
+    const urls: [string, HTMLImageElement][] = []
     let stale = false
 
     const photoEntries: Entry[] = []
@@ -304,7 +327,7 @@ export function MapHero({ route, photos, pois, expanded, onExpand, onCollapse, o
       void getPhotoUrl(photo.id, 'thumb').then((url) => {
         if (!url) return
         if (stale) return URL.revokeObjectURL(url)
-        urls.push(url)
+        urls.push([url, img])
         img.src = url
       }, () => {})
     }
@@ -312,8 +335,9 @@ export function MapHero({ route, photos, pois, expanded, onExpand, onCollapse, o
     entries.push(...poiEntries)
 
     const run = () => {
-      thin(photoEntries)
-      thin(poiEntries, photoEntries)
+      const fixed = chrome(container.current?.parentElement)
+      thin(photoEntries, fixed)
+      thin(poiEntries, [...fixed, ...shown(photoEntries)], container.current?.getBoundingClientRect())
     }
     run()
     map.on('moveend', run)
@@ -322,7 +346,7 @@ export function MapHero({ route, photos, pois, expanded, onExpand, onCollapse, o
       stale = true
       map.off('moveend', run)
       for (const e of entries) e.marker.remove()
-      for (const url of urls) URL.revokeObjectURL(url)
+      for (const [url, img] of urls) release(url, img)
     }
   }, [ready, routeKey, photoKey, poiKey])
 

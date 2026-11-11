@@ -1,9 +1,12 @@
 import { Component, Suspense, lazy, useEffect, type ReactNode } from 'react'
 import { getKey } from './key'
+import { keepFontsOffline } from './pwa'
 import { navigate, useRoute } from './router'
 import { HomeScreen } from './screens/home'
 import { WelcomeScreen } from './screens/welcome'
 import { Button, EmptyState, Ridge, Screen, Spinner, Toaster } from './ui'
+
+keepFontsOffline()
 
 const NewTripScreen = lazy(() => import('./screens/new-trip').then((m) => ({ default: m.NewTripScreen })))
 const JournalScreen = lazy(() => import('./screens/journal').then((m) => ({ default: m.JournalScreen })))

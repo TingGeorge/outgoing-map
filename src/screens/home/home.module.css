@@ -6,6 +6,7 @@
 }
 
 .titles {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -21,7 +22,7 @@
 .title {
   font-family: var(--font-hand);
   font-weight: 700;
-  font-size: var(--text-3xl);
+  font-size: clamp(1.5rem, 8vw, var(--text-3xl));
   line-height: 1.3;
 }
 
@@ -63,23 +64,34 @@
 
 .recentTitleRow {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
+  gap: 2px 8px;
 }
 
 .recentTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
   font-family: var(--font-hand);
   font-weight: 700;
   font-size: var(--text-2xl);
 }
 
 .muted {
+  white-space: nowrap;
   font-size: var(--text-sm);
   color: var(--color-ink-muted);
 }
 
 .chips {
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -162,13 +174,13 @@
 
 .num {
   flex: none;
-  width: 28px;
-  height: 28px;
-  border-radius: 14px;
+  width: 2em;
+  height: 2em;
+  border-radius: 1em;
   background: var(--color-moss);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
-  line-height: 28px;
+  line-height: 2em;
   text-align: center;
 }
 
@@ -192,4 +204,8 @@
   background: var(--color-card);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
+}
+
+.chips > * {
+  white-space: nowrap;
 }

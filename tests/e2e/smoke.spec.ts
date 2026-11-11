@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { watch } from './helpers'
 
 const FAKE_KEY = 'ffffffffffffffffffffffffffffffff'
 
@@ -91,6 +92,74 @@ test.describe('with a stored key', () => {
     await deepLink('#/settings')
     await page.getByRole('button', { name: '回首頁' }).click()
     await expect(page).toHaveURL(/#\/$/)
+  })
+
+  test('a malformed link like #/trip/% goes home instead of a blank screen', async ({ context, baseURL }) => {
+    for (const bad of ['#/trip/%', '#/trip/%E0%A4%A/fly', '#/%zz']) {
+      const page = await context.newPage()
+      await page.addInitScript((key) => localStorage.setItem('thunderforest-key', key), FAKE_KEY)
+      const problems = watch(page, new URL(baseURL!).origin)
+
+      await page.goto(`./${bad}`)
+      await expect(page).toHaveURL(/#\/$/)
+      await expect(page.getByRole('heading', { level: 1, name: /想回味哪一座山/ })).toBeVisible()
+      expect(problems).toEqual([])
+      await page.close()
+    }
+  })
+
+  test('on #/new with picked files, every Back asks again until 離開 is chosen', async ({ page }) => {
+    await page.goto('./#/')
+    await page.getByRole('link', { name: '新的回憶' }).click()
+    await page.locator('input[type=file]').nth(0).setInputFiles('tests/fixtures/hehuan-north.gpx')
+    await expect(page.getByText('hehuan-north.gpx')).toBeVisible()
+
+    const dialog = page.getByRole('heading', { name: '要離開嗎？' })
+
+    await page.goBack()
+    await expect(dialog).toBeVisible()
+    await page.goBack()
+    await page.goBack()
+    await expect(page).toHaveURL(/#\/new$/)
+    await expect(dialog).toBeVisible()
+
+    await page.getByRole('button', { name: '留下來' }).click()
+    await expect(dialog).toBeHidden()
+    await Promise.all([page.goBack(), page.goBack()])
+    await expect(dialog).toBeVisible()
+    await expect(page).toHaveURL(/#\/new$/)
+
+    await page.getByRole('button', { name: '離開' }).click()
+    await expect(page).toHaveURL(/#\/$/)
+    await expect(page.getByRole('heading', { level: 1, name: /想回味哪一座山/ })).toBeVisible()
+  })
+
+  test('on #/new while saving, quick Backs stay on the screen and the save finishes', async ({ page }) => {
+    await page.addInitScript(() => {
+      const digest = crypto.subtle.digest.bind(crypto.subtle)
+      let release = () => {}
+      const held = new Promise<void>((r) => (release = r))
+      ;(window as { releaseSave?: () => void }).releaseSave = release
+      crypto.subtle.digest = async (...args: Parameters<SubtleCrypto['digest']>) => {
+        await held
+        return digest(...args)
+      }
+    })
+
+    await page.goto('./#/')
+    await page.getByRole('link', { name: '新的回憶' }).click()
+    await page.locator('input[type=file]').nth(1).setInputFiles('tests/fixtures/hehuan-0720-gps.jpg')
+    await page.getByRole('button', { name: '建立回憶' }).click()
+    await expect(page.getByText('正在處理照片')).toBeVisible()
+
+    await Promise.all([page.goBack(), page.goBack()])
+    await page.goBack()
+    await page.waitForTimeout(300)
+    await expect(page).toHaveURL(/#\/new$/)
+    await expect(page.getByText('正在處理照片')).toBeVisible()
+
+    await page.evaluate(() => (window as { releaseSave?: () => void }).releaseSave!())
+    await expect(page.getByRole('button', { name: '看這趟日誌' })).toBeVisible({ timeout: 30_000 })
   })
 
   test('a sheet opened by tap shows no focus ring, by keyboard it does, and a toast shows above it', async ({ page }) => {

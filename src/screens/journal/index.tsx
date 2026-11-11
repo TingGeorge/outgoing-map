@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { buildRoute, buildTimeline, distanceM, elevationProfile } from '../../core'
 import { poisAlongRoute } from '../../poi'
 import { goBack, href } from '../../router'
-import { getTrack, getTrip, listPhotos, updateTrip } from '../../storage'
+import { TEXT_LIMITS, getTrack, getTrip, listPhotos, updateTrip } from '../../storage'
 import type { ElevationProfile, Photo, PoiOnRoute, Route, Trip } from '../../types'
 import {
   ActionRow,
@@ -24,13 +24,17 @@ import {
   TrashIcon,
   Dialog,
   Ridge,
-  formatDate,
+  formatDateRange,
   formatDuration,
   formatKm,
   formatMetres,
   toast,
 } from '../../ui'
 import { useTripActions } from './actions'
+import { routeSections } from './sections'
+import { short } from './text'
+import { applyDrafts } from './drafts'
+import { useBackToClose, useOverlayHome } from './overlays'
 import { Diary } from './Diary'
 import { MapHero, type Scrub } from './MapHero'
 import { Profile } from './Profile'
@@ -51,43 +55,33 @@ interface Data {
 
 type State = { status: 'loading' } | { status: 'missing' } | { status: 'error'; message: string } | { status: 'ready'; data: Data }
 
-async function read(id: string): Promise<Data | null> {
-  const trip = await getTrip(id)
+async function read(id: string, withDrafts: boolean): Promise<Data | null> {
+  let trip = await getTrip(id)
   if (!trip) return null
 
-  const [track, photos] = await Promise.all([getTrack(id), listPhotos(id)])
+  let [track, photos] = await Promise.all([getTrack(id), listPhotos(id)])
+
+  if (withDrafts && (await applyDrafts(trip, photos))) {
+    trip = (await getTrip(id)) ?? trip
+    photos = await listPhotos(id)
+  }
+
   const route = buildRoute(track, photos)
 
   return { trip, photos, route, profile: elevationProfile(route) }
 }
 
-function useBackToClose(open: boolean, close: () => void) {
-  const latest = useRef(close)
-  latest.current = close
-
-  useEffect(() => {
-    if (!open) return
-
-    history.pushState({ ...history.state, journalOverlay: true }, '')
-    const onPop = () => latest.current()
-    addEventListener('popstate', onPop)
-
-    return () => {
-      removeEventListener('popstate', onPop)
-      if (history.state?.journalOverlay) history.back()
-    }
-  }, [open])
-}
-
 export function JournalScreen({ tripId }: JournalScreenProps) {
   const [state, setState] = useState<State>({ status: 'loading' })
   const seq = useRef(0)
+  const drafted = useRef(false)
 
   const reload = useCallback(async () => {
     const mine = ++seq.current
 
     try {
-      const data = await read(tripId)
+      const data = await read(tripId, !drafted.current)
+      drafted.current = true
       if (mine === seq.current) setState(data ? { status: 'ready', data } : { status: 'missing' })
     } catch (e) {
       if (mine === seq.current) setState({ status: 'error', message: (e as Error).message })
@@ -173,8 +167,11 @@ function Journal({ data, reload }: { data: Data; reload: () => Promise<void> }) 
   const collapse = useCallback(() => setExpanded(false), [])
   const closeViewer = useCallback(() => setViewing(null), [])
 
+  useOverlayHome(trip.id)
   useBackToClose(expanded, collapse)
   useBackToClose(viewing !== null, closeViewer)
+  useBackToClose(menu, () => setMenu(false))
+  useBackToClose(editTitle, () => setEditTitle(false))
 
   const scrub = useRef<Scrub | null>(null)
   const actions = useTripActions(trip, reload)
@@ -185,6 +182,7 @@ function Journal({ data, reload }: { data: Data; reload: () => Promise<void> }) 
   const hasMap = route.points.length > 0
   const stats = trip.stats
   const hasEle = route.points.some((p) => p.ele !== null)
+  const gaps = useMemo(() => routeSections(route).slice(1).map(([p]) => p!.distanceM), [route])
 
   const menuAction = (fn: () => void) => () => {
     setMenu(false)
@@ -232,9 +230,9 @@ function Journal({ data, reload }: { data: Data; reload: () => Promise<void> }) 
 
       <div className={s.sheet}>
         <header className={s.header}>
-          {trip.startAt !== null && <p className={s.date}>{formatDate(trip.startAt, true)}</p>}
+          {trip.startAt !== null && <p className={s.date}>{formatDateRange(trip.startAt, trip.endAt, true)}</p>}
           <div className={s.titleRow}>
-            <h1 className={s.title}>{trip.title}</h1>
+            <h1 className={s.title}>{short(trip.title)}</h1>
             <IconButton label="修改名稱" variant="moss" onClick={() => setEditTitle(true)}>
               <EditIcon size={20} />
             </IconButton>
@@ -278,7 +276,7 @@ function Journal({ data, reload }: { data: Data; reload: () => Promise<void> }) 
           </Notice>
         )}
 
-        {profile && <Profile profile={profile} scrub={scrub} />}
+        {profile && <Profile profile={profile} scrub={scrub} gaps={gaps} />}
 
         {timeline.length > 0 ? (
           <Timeline items={timeline} loop={loop} onOpen={setViewing} />
@@ -312,7 +310,7 @@ function Journal({ data, reload }: { data: Data; reload: () => Promise<void> }) 
           tripId={trip.id}
           coverId={trip.coverPhotoId}
           onSelect={setViewing}
-          onClose={() => history.back()}
+          onClose={closeViewer}
           reload={reload}
         />
       )}
@@ -371,7 +369,16 @@ function TitleDialog({ open, trip, onClose, reload }: { open: boolean; trip: Tri
           void save()
         }}
       >
-        <TextField label="這趟的名字" value={value} onChange={setValue} error={error || undefined} maxLength={60} autoFocus enterKeyHint="done" />
+        <TextField
+          label="這趟的名字"
+          value={value}
+          onChange={setValue}
+          error={error || undefined}
+          hint={value.length >= TEXT_LIMITS.title - 20 ? `${value.length} / ${TEXT_LIMITS.title}` : undefined}
+          maxLength={TEXT_LIMITS.title}
+          autoFocus
+          enterKeyHint="done"
+        />
       </form>
     </Dialog>
   )

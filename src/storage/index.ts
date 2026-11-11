@@ -34,7 +34,24 @@ const MSG = {
   incomplete: '匯出檔不完整，缺少照片',
   badPhoto: '匯出檔裡有照片無法讀取',
   code: 'App 的一部分沒有下載成功，請連上網路後重新載入',
+  tooBig: '這個匯出檔太大，無法匯入',
 }
+
+export const TEXT_LIMITS = { title: 80, diary: 100_000, caption: 2_000, fileName: 255 }
+
+export const IMPORT_LIMITS = {
+  archiveBytes: 768 * 1024 * 1024,
+  entries: 2_001,
+  entryBytes: 64 * 1024 * 1024,
+  totalBytes: 1024 * 1024 * 1024,
+  trackPoints: 500_000,
+}
+
+function clip(text: string, max: number): string {
+  return text.length <= max ? text : text.slice(0, max).replace(/[\uD800-\uDBFF]$/, '')
+}
+
+const cleanTitle = (title: string) => clip(title.trim(), TEXT_LIMITS.title)
 
 function lazyLib<T>(load: () => Promise<T>): () => Promise<T> {
   return () =>
@@ -167,7 +184,11 @@ async function refresh(tx: WriteTx, tripId: Id): Promise<Trip> {
   const route = buildRoute(track, photos)
   const placements = placePhotos(photos, route)
 
-  for (const [i, p] of photos.entries()) await tx.objectStore('photos').put({ ...p, placement: placements[i]! })
+  // ponytail: each addPhotos file still re-reads and re-places the whole trip (O(N) per photo, ~12 ms at 200 photos); only changed placements are written. Batch-level refresh is the upgrade if trips reach thousands of photos.
+  for (const [i, p] of photos.entries()) {
+    const placement = placements[i]!
+    if (JSON.stringify(placement) !== JSON.stringify(p.placement)) await tx.objectStore('photos').put({ ...p, placement })
+  }
 
   const times = photos.flatMap((p) => (p.takenAt === null ? [] : [p.takenAt]))
   const keepCover = photos.some((p) => p.id === trip.coverPhotoId)
@@ -203,10 +224,10 @@ export async function createTrip(input: { title: string; diary?: string }): Prom
 
   const trip: Trip = {
     id: crypto.randomUUID(),
-    title: input.title,
+    title: cleanTitle(input.title),
     startAt: null,
     endAt: null,
-    diary: input.diary ?? '',
+    diary: clip(input.diary ?? '', TEXT_LIMITS.diary),
     hasTrack: false,
     stats: null,
     coverPhotoId: null,
@@ -231,8 +252,8 @@ export function updateTrip(id: Id, patch: TripPatch): Promise<Trip> {
 
     const next: Trip = {
       ...trip,
-      ...(patch.title !== undefined && { title: patch.title }),
-      ...(patch.diary !== undefined && { diary: patch.diary }),
+      ...(patch.title !== undefined && { title: cleanTitle(patch.title) }),
+      ...(patch.diary !== undefined && { diary: clip(patch.diary, TEXT_LIMITS.diary) }),
       ...(patch.coverPhotoId !== undefined && { coverPhotoId: patch.coverPhotoId }),
       updatedAt: Date.now(),
     }
@@ -311,10 +332,21 @@ async function sourceKeyOf(bytes: ArrayBuffer): Promise<string> {
   return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-function failureReason(file: File): string {
-  if (/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name)) return PHOTO_FAILURE.heic
-  if (file.type && !file.type.startsWith('image/')) return PHOTO_FAILURE.notImage
-  return PHOTO_FAILURE.unreadable
+const HEIF_BRANDS = new Set(['heic', 'heix', 'heim', 'heis', 'hevc', 'hevx', 'mif1', 'msf1', 'avif'])
+
+export type ImageKind = 'jpeg' | 'png' | 'gif' | 'webp' | 'tiff' | 'heif'
+
+export function sniffImage(bytes: ArrayBuffer | Uint8Array): ImageKind | null {
+  const b = (bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)).subarray(0, 16)
+  const ascii = (from: number, to: number) => String.fromCharCode(...b.subarray(from, to))
+
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpeg'
+  if (ascii(0, 8) === '\x89PNG\r\n\x1a\n') return 'png'
+  if (ascii(0, 6) === 'GIF87a' || ascii(0, 6) === 'GIF89a') return 'gif'
+  if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return 'webp'
+  if (ascii(0, 4) === 'II*\0' || ascii(0, 4) === 'MM\0*') return 'tiff'
+  if (ascii(4, 8) === 'ftyp' && HEIF_BRANDS.has(ascii(8, 12))) return 'heif'
+  return null
 }
 
 async function toRecord(blob: Blob): Promise<Omit<BlobRecord, 'photoId' | 'size'>> {
@@ -325,7 +357,26 @@ function isDuplicate(tx: Tx, tripId: Id, sourceKey: string): Promise<boolean> {
   return tx.objectStore('photos').index('source').count([tripId, sourceKey]).then((n) => n > 0)
 }
 
-export async function addPhotos(
+let unloading = false
+
+addEventListener('pagehide', () => (unloading = true))
+addEventListener('pageshow', () => (unloading = false))
+
+function quietOnUnload<T>(work: Promise<T>): Promise<T> {
+  return work.catch((e: unknown) => {
+    if (e instanceof Error && e.constructor === Error) throw e
+
+    return new Promise<T>((_, reject) => {
+      if (!unloading) setTimeout(() => !unloading && reject(e), 500)
+    })
+  })
+}
+
+export function addPhotos(tripId: Id, files: File[], onProgress?: (done: number, total: number) => void): Promise<AddPhotosResult> {
+  return quietOnUnload(addEachPhoto(tripId, files, onProgress))
+}
+
+async function addEachPhoto(
   tripId: Id,
   files: File[],
   onProgress?: (done: number, total: number) => void,
@@ -340,10 +391,13 @@ export async function addPhotos(
     const fail = (reason: string) => failed.push({ fileName: file.name, reason })
 
     const bytes = await file.arrayBuffer().catch(() => null)
-    const sourceKey = bytes && (await sourceKeyOf(bytes))
+    const kind = bytes && sniffImage(bytes)
+    const sourceKey = kind && (await sourceKeyOf(bytes!))
 
-    if (!bytes || !sourceKey) {
+    if (!bytes) {
       fail(PHOTO_FAILURE.unreadable)
+    } else if (!kind || !sourceKey) {
+      fail(PHOTO_FAILURE.notImage)
     } else if (await run('readonly', ['photos'], (tx) => isDuplicate(tx, tripId, sourceKey))) {
       fail(PHOTO_FAILURE.duplicate)
     } else {
@@ -351,7 +405,7 @@ export async function addPhotos(
       const rendered = await renderImage(file, exif.orientation, true).catch(() => null)
 
       if (!rendered) {
-        fail(failureReason(file))
+        fail(kind === 'heif' ? PHOTO_FAILURE.heic : PHOTO_FAILURE.unreadable)
       } else {
         const id = crypto.randomUUID()
         const full = await toRecord(rendered.full!)
@@ -402,7 +456,7 @@ export function updatePhoto(id: Id, patch: PhotoPatch): Promise<Photo> {
     const photo = await tx.objectStore('photos').get(id)
     if (!photo) throw new Error(MSG.noPhoto)
 
-    const next = { ...photo, ...(patch.caption !== undefined && { caption: patch.caption }) }
+    const next = { ...photo, ...(patch.caption !== undefined && { caption: clip(patch.caption, TEXT_LIMITS.caption) }) }
     await tx.objectStore('photos').put(next)
     return publicPhoto(next)
   })
@@ -469,38 +523,137 @@ export async function exportTrip(id: Id): Promise<Blob> {
   return new Blob([zip], { type: 'application/zip' })
 }
 
-function readManifest(entries: Record<string, Uint8Array>, strFromU8: (data: Uint8Array) => string): Manifest {
-  const raw = entries['manifest.json']
-  if (!raw) throw new Error(MSG.notArchive)
+interface ImportedPhoto {
+  id: string
+  file: string
+  fileName: string
+  takenAt: EpochMs | null
+  gps: PhotoGps | null
+  caption: string
+  sourceKey: string | null
+}
 
-  let m: Manifest
+interface Imported {
+  title: string
+  diary: string
+  coverPhotoId: string | null
+  track: TrackPoint[] | null
+  photos: ImportedPhoto[]
+}
+
+type Json = Record<string, unknown>
+
+const PHOTO_ENTRY = /^photos\/[A-Za-z0-9-]{1,64}\.jpg$/
+
+const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v)
+const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+const isNumberOrNull = (v: unknown): v is number | null => v === null || isNumber(v)
+const isLatLon = (v: Json) => isNumber(v.lat) && isNumber(v.lon) && Math.abs(v.lat) <= 90 && Math.abs(v.lon) <= 180
+
+function notArchive(): never {
+  throw new Error(MSG.notArchive)
+}
+
+function readPoint(v: unknown): TrackPoint {
+  if (!isObject(v) || !isLatLon(v) || !isNumberOrNull(v.ele) || !isNumberOrNull(v.time)) notArchive()
+  return { lat: v.lat as number, lon: v.lon as number, ele: v.ele, time: v.time }
+}
+
+function readGps(v: unknown): PhotoGps | null {
+  if (v === null) return null
+  if (!isObject(v) || !isLatLon(v) || !isNumberOrNull(v.ele) || !isNumberOrNull(v.heading)) notArchive()
+  return { lat: v.lat as number, lon: v.lon as number, ele: v.ele, heading: v.heading }
+}
+
+function readPhoto(v: unknown): ImportedPhoto {
+  if (!isObject(v)) notArchive()
+
+  const { id, file, fileName, takenAt, caption, sourceKey } = v
+  const strings = typeof id === 'string' && typeof fileName === 'string' && typeof caption === 'string'
+
+  if (!strings || typeof file !== 'string' || !PHOTO_ENTRY.test(file) || !isNumberOrNull(takenAt)) notArchive()
+  if (sourceKey !== undefined && typeof sourceKey !== 'string') notArchive()
+
+  return {
+    id,
+    file,
+    fileName: clip(fileName, TEXT_LIMITS.fileName),
+    takenAt,
+    gps: readGps(v.gps),
+    caption: clip(caption, TEXT_LIMITS.caption),
+    sourceKey: sourceKey ? clip(sourceKey, 128) : null,
+  }
+}
+
+function readManifest(raw: Uint8Array | undefined, strFromU8: (data: Uint8Array) => string): Imported {
+  if (!raw) notArchive()
+
+  let m: unknown
 
   try {
     m = JSON.parse(strFromU8(raw))
   } catch {
-    throw new Error(MSG.notArchive)
+    notArchive()
   }
 
-  if (m?.format !== EXPORT_FORMAT || typeof m.version !== 'number') throw new Error(MSG.notArchive)
+  if (!isObject(m) || m.format !== EXPORT_FORMAT || !isNumber(m.version)) notArchive()
   if (m.version > EXPORT_VERSION) throw new Error(MSG.newer)
-  if (!m.trip || typeof m.trip.title !== 'string' || !Array.isArray(m.photos)) throw new Error(MSG.notArchive)
-  const validPoint = (p: TrackPoint) => typeof p?.lat === 'number' && typeof p?.lon === 'number'
-  if (m.track !== null && !(Array.isArray(m.track) && m.track.every(validPoint))) throw new Error(MSG.notArchive)
 
-  return m
+  const { trip, track, photos } = m
+
+  if (!isObject(trip) || typeof trip.title !== 'string' || typeof trip.diary !== 'string') notArchive()
+  if (trip.coverPhotoId !== undefined && trip.coverPhotoId !== null && typeof trip.coverPhotoId !== 'string') notArchive()
+  if (track !== null && !(Array.isArray(track) && track.length <= IMPORT_LIMITS.trackPoints)) notArchive()
+  if (!Array.isArray(photos) || photos.length >= IMPORT_LIMITS.entries) notArchive()
+
+  const read = photos.map(readPhoto)
+  if (new Set(read.map((p) => p.file)).size !== read.length) notArchive()
+
+  return {
+    title: cleanTitle(trip.title),
+    diary: clip(trip.diary, TEXT_LIMITS.diary),
+    coverPhotoId: trip.coverPhotoId ?? null,
+    track: track === null ? null : track.map(readPoint),
+    photos: read,
+  }
 }
 
-export async function importTrip(file: Blob): Promise<Trip> {
-  const { strFromU8, unzipSync } = await loadZip()
-  let entries: Record<string, Uint8Array>
+function unzipLimited(unzipSync: Awaited<ReturnType<typeof loadZip>>['unzipSync'], bytes: Uint8Array): Record<string, Uint8Array> {
+  let count = 0
+  let total = 0
 
-  try {
-    entries = unzipSync(new Uint8Array(await file.arrayBuffer()))
-  } catch {
-    throw new Error(MSG.notArchive)
+  const tooBig = () => {
+    throw new Error(MSG.tooBig)
   }
 
-  const m = readManifest(entries, strFromU8)
+  try {
+    return unzipSync(bytes, {
+      filter({ name, size, originalSize }) {
+        if (++count > IMPORT_LIMITS.entries) tooBig()
+        if (name !== 'manifest.json' && !PHOTO_ENTRY.test(name)) return false
+
+        const entry = Math.max(size, originalSize)
+        total += entry
+        if (entry > IMPORT_LIMITS.entryBytes || total > IMPORT_LIMITS.totalBytes) tooBig()
+        return true
+      },
+    })
+  } catch (e) {
+    if (e instanceof Error && e.message === MSG.tooBig) throw e
+    notArchive()
+  }
+}
+
+export function importTrip(file: Blob): Promise<Trip> {
+  return quietOnUnload(importArchive(file))
+}
+
+async function importArchive(file: Blob): Promise<Trip> {
+  const { strFromU8, unzipSync } = await loadZip()
+  if (file.size > IMPORT_LIMITS.archiveBytes) throw new Error(MSG.tooBig)
+
+  const entries = unzipLimited(unzipSync, new Uint8Array(await file.arrayBuffer()))
+  const m = readManifest(entries['manifest.json'], strFromU8)
   const now = Date.now()
   const tripId = crypto.randomUUID()
 
@@ -509,6 +662,7 @@ export async function importTrip(file: Blob): Promise<Trip> {
   for (const p of m.photos) {
     const bytes = entries[p.file]
     if (!bytes) throw new Error(`${MSG.incomplete} ${p.fileName}`)
+    if (sniffImage(bytes) !== 'jpeg') throw new Error(MSG.badPhoto)
 
     const full = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' })
     const rendered = await renderImage(full, 1, false).catch(() => {
@@ -521,26 +675,26 @@ export async function importTrip(file: Blob): Promise<Trip> {
       record: {
         id,
         tripId,
-        fileName: String(p.fileName),
-        takenAt: typeof p.takenAt === 'number' ? p.takenAt : null,
-        gps: p.gps ?? null,
-        caption: String(p.caption ?? ''),
+        fileName: p.fileName,
+        takenAt: p.takenAt,
+        gps: p.gps,
+        caption: p.caption,
         width: rendered.width,
         height: rendered.height,
         placement: { source: 'none' },
-        sourceKey: String(p.sourceKey ?? id),
+        sourceKey: p.sourceKey ?? id,
       },
       full: { photoId: id, size: 'full', type: 'image/jpeg', bytes: bytes.slice().buffer },
       thumb: { photoId: id, size: 'thumb', ...(await toRecord(rendered.thumb)) },
     })
   }
 
-  const cover = m.photos.findIndex((p) => p.id === m.trip.coverPhotoId)
+  const cover = m.photos.findIndex((p) => p.id === m.coverPhotoId)
 
   const trip: Trip = {
     id: tripId,
-    title: m.trip.title,
-    diary: String(m.trip.diary ?? ''),
+    title: m.title,
+    diary: m.diary,
     startAt: null,
     endAt: null,
     hasTrack: false,

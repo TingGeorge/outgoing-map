@@ -12,6 +12,8 @@ const TOTAL = 4
 type Step = 1 | 2 | 3 | 4
 type Check = 'idle' | 'checking' | KeyCheck
 
+const scrollBehavior = (): ScrollBehavior => (matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth')
+
 function readStep(): Step {
   try {
     const n = Number(localStorage.getItem(STEP_STORAGE))
@@ -156,7 +158,7 @@ export function WelcomeScreen() {
 
     const vv = window.visualViewport
     const reveal = () => {
-      if (input.current?.contains(document.activeElement)) input.current.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      if (input.current?.contains(document.activeElement)) input.current.scrollIntoView({ block: 'center', behavior: scrollBehavior() })
     }
 
     vv?.addEventListener('resize', reveal)
@@ -185,6 +187,7 @@ export function WelcomeScreen() {
   }
 
   const finish = () => {
+    if (check !== 'valid') return
     setKey(value)
     saveStep(null)
     setStep(4)
@@ -308,7 +311,7 @@ export function WelcomeScreen() {
             autoCapitalize="none"
             spellCheck={false}
             enterKeyHint="done"
-            onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300)}
+            onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ block: 'center', behavior: scrollBehavior() }), 300)}
           />
           <div className={s.tools}>
             {canPaste && (
@@ -343,7 +346,12 @@ export function WelcomeScreen() {
     <Screen
       bottom={
         <div className={s.actions} style={{ width: '100%', paddingTop: 0 }}>
-          <Button block onClick={() => navigate({ name: 'home' }, { replace: true })}>
+          <Button
+            block
+            onClick={(e) => {
+              if (e.detail < 2) navigate({ name: 'home' }, { replace: true })
+            }}
+          >
             進入 App
           </Button>
         </div>

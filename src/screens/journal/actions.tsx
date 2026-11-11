@@ -4,7 +4,8 @@ import { goBack } from '../../router'
 import { PHOTO_FAILURE, addPhotos, deleteTrip, exportTrip, saveTrack } from '../../storage'
 import type { PhotoImportFailure, TrackPoint, Trip } from '../../types'
 import { Button, ConfirmDialog, Dialog, DownloadIcon, ProgressBar, ShareIcon, Spinner, toast } from '../../ui'
-import { exportFileName } from './text'
+import { afterOverlays, useBackToClose } from './overlays'
+import { exportFileName, short } from './text'
 import s from './journal.module.css'
 
 type Adding = { phase: 'working'; done: number; total: number } | { phase: 'done'; added: number; duplicates: number; failed: PhotoImportFailure[] }
@@ -24,6 +25,11 @@ export function useTripActions(trip: Trip, reload: () => Promise<void>) {
   const [gpxBusy, setGpxBusy] = useState(false)
   const [exporting, setExporting] = useState<Exporting | null>(null)
   const [deleting, setDeleting] = useState<'ask' | 'busy' | null>(null)
+
+  useBackToClose(adding?.phase === 'done', () => setAdding(null))
+  useBackToClose(gpx !== null && !gpxBusy, () => setGpx(null))
+  useBackToClose(exporting !== null && exporting.phase !== 'working', () => setExporting(null))
+  useBackToClose(deleting === 'ask', () => setDeleting(null))
 
   const onPhotos = async (files: File[]) => {
     setAdding({ phase: 'working', done: 0, total: files.length })
@@ -85,7 +91,7 @@ export function useTripActions(trip: Trip, reload: () => Promise<void>) {
   const deliver = async (file: File) => {
     if (navigator.canShare?.({ files: [file] })) {
       try {
-        await navigator.share({ files: [file], title: trip.title })
+        await navigator.share({ files: [file], title: short(trip.title, 80) })
         setExporting(null)
         toast('已交給分享選單，存到「檔案」就有備份了', { tone: 'success' })
       } catch (e) {
@@ -119,8 +125,8 @@ export function useTripActions(trip: Trip, reload: () => Promise<void>) {
 
     try {
       await deleteTrip(trip.id)
-      toast(`已刪除「${trip.title}」`)
-      goBack({ name: 'home' })
+      toast(`已刪除「${short(trip.title, 60)}」`)
+      afterOverlays(() => goBack({ name: 'home' }))
     } catch (e) {
       setDeleting(null)
       toast((e as Error).message, { tone: 'error' })
@@ -216,7 +222,7 @@ export function useTripActions(trip: Trip, reload: () => Promise<void>) {
         danger
         busy={deleting === 'busy'}
         title="刪除這篇回憶？"
-        message={`「${trip.title}」的路線、${trip.photoCount} 張照片和日記都會從這台裝置刪除，無法復原。需要的話，請先匯出備份。`}
+        message={`「${short(trip.title, 60)}」的路線、${trip.photoCount} 張照片和日記都會從這台裝置刪除，無法復原。需要的話，請先匯出備份。`}
         confirmLabel="刪除回憶"
         onConfirm={() => void removeTrip()}
         onCancel={() => setDeleting(null)}

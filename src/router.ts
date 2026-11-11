@@ -10,8 +10,18 @@ export type AppRoute =
   | { name: 'settings' }
   | { name: 'not-found' }
 
+function decode(part: string): string | null {
+  try {
+    return decodeURIComponent(part)
+  } catch {
+    return null
+  }
+}
+
 export function parseRoute(hash: string): AppRoute {
-  const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent)
+  const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decode)
+  if (parts.includes(null)) return { name: 'not-found' }
+
   const [first, id, extra] = parts
 
   if (!first) return { name: 'home' }
@@ -60,8 +70,54 @@ export function navigate(route: Exclude<AppRoute, { name: 'not-found' }>, option
 }
 
 export function goBack(fallback: Exclude<AppRoute, { name: 'not-found' }>): void {
+  if (guard) return guard.release(() => goBack(fallback))
+
   if (depth > 0) history.back()
   else navigate(fallback, { replace: true })
+}
+
+interface Guard {
+  onBack: () => void
+  release: (then?: () => void) => void
+}
+
+let guard: Guard | null = null
+let ownPops: (() => void)[] = []
+
+const onGuardEntry = () => history.state?.leaveGuard === true
+
+addEventListener('popstate', () => {
+  const own = ownPops.shift()
+  if (own) return own()
+
+  if (guard && !onGuardEntry()) {
+    history.pushState({ ...history.state, leaveGuard: true }, '')
+    guard.onBack()
+  }
+})
+
+export function guardBack(onBack: () => void): (then?: () => void) => void {
+  guard?.release()
+
+  const mine: Guard = {
+    onBack,
+    release(then) {
+      if (guard !== mine) return then?.()
+      guard = null
+
+      queueMicrotask(() => {
+        if (guard || !onGuardEntry()) return then?.()
+
+        ownPops.push(() => then?.())
+        history.back()
+      })
+    },
+  }
+
+  guard = mine
+  if (!onGuardEntry()) history.pushState({ ...history.state, leaveGuard: true }, '')
+
+  return mine.release
 }
 
 function subscribe(onChange: () => void) {

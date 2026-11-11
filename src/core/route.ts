@@ -17,6 +17,10 @@ const EARTH_RADIUS_M = 6_371_008.8
 
 export const ELEVATION_HYSTERESIS_M = 5
 
+export const GAP_MIN_M = 1000
+
+export const GAP_MIN_SPEED_KMH = 12
+
 const RAD = Math.PI / 180
 
 export function distanceM(a: LatLon, b: LatLon): number {
@@ -27,8 +31,15 @@ export function distanceM(a: LatLon, b: LatLon): number {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)))
 }
 
+export function isRouteGap(a: TrackPoint, b: TrackPoint, meters = distanceM(a, b)): boolean {
+  if (meters < GAP_MIN_M || a.time === null || b.time === null) return false
+
+  const hours = (b.time - a.time) / 3_600_000
+  return hours <= 0 || meters / 1000 / hours > GAP_MIN_SPEED_KMH
+}
+
 export function buildRoute(track: TrackPoint[] | null, photos: Photo[]): Route {
-  if (track && track.length > 0) return toRoute('gpx', monotonicTimes(track))
+  if (track && track.length > 0) return toRoute('gpx', inTimeOrder(track))
 
   const points = photos
     .filter((p) => p.gps && p.takenAt !== null)
@@ -42,7 +53,8 @@ function toRoute(source: RouteSource, track: TrackPoint[]): Route {
   let total = 0
 
   const points: RoutePoint[] = track.map((p, i) => {
-    if (i > 0) total += distanceM(track[i - 1]!, p)
+    const step = i > 0 ? distanceM(track[i - 1]!, p) : 0
+    if (!isRouteGap(track[i - 1] ?? p, p, step)) total += step
     return { lat: p.lat, lon: p.lon, ele: p.ele, time: p.time, distanceM: total }
   })
 
@@ -55,6 +67,11 @@ function toRoute(source: RouteSource, track: TrackPoint[]): Route {
     startAt: times[0]?.time ?? null,
     endAt: times.at(-1)?.time ?? null,
   }
+}
+
+function inTimeOrder(track: TrackPoint[]): TrackPoint[] {
+  if (track.every((p) => p.time !== null)) return [...track].sort((a, b) => a.time! - b.time!)
+  return monotonicTimes(track)
 }
 
 function monotonicTimes(track: TrackPoint[]): TrackPoint[] {
@@ -86,7 +103,12 @@ export function routeStats(route: Route): TripStats {
   let reference: number | null = null
   let direction = 0
 
-  for (const { ele } of route.points) {
+  for (const [i, { ele }] of route.points.entries()) {
+    if (i > 0 && isRouteGap(route.points[i - 1]!, route.points[i]!)) {
+      reference = null
+      direction = 0
+    }
+
     if (ele === null) continue
 
     maxEleM = Math.max(maxEleM ?? ele, ele)

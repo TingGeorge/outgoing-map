@@ -1,17 +1,20 @@
 .top {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
   min-height: var(--touch);
 }
 
 .progress {
   display: flex;
   gap: 6px;
+  min-width: 0;
 }
 
 .seg {
-  width: 28px;
+  flex: 0 1 28px;
+  min-width: 12px;
   height: 6px;
   border-radius: 3px;
   background: var(--color-ridge-mid);
@@ -23,6 +26,7 @@
 
 .stepLabel {
   margin-left: auto;
+  white-space: nowrap;
   font-size: var(--text-sm);
   font-weight: 500;
   color: var(--color-ink-muted);
@@ -35,6 +39,7 @@
 }
 
 .title {
+  overflow-wrap: anywhere;
   font-family: var(--font-hand);
   font-weight: 700;
   font-size: var(--text-3xl);
@@ -72,13 +77,13 @@
 
 .num {
   flex: none;
-  width: 28px;
-  height: 28px;
-  border-radius: 14px;
+  width: 2em;
+  height: 2em;
+  border-radius: 1em;
   background: var(--color-moss);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
-  line-height: 28px;
+  line-height: 2em;
   text-align: center;
 }
 

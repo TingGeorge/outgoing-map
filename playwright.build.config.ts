@@ -10,6 +10,10 @@ const chromiumGL = process.platform === 'darwin'
   ? ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist']
   : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader']
 
+const dist = process.env.E2E_DIST ?? 'dist'
+
+const device = { locale: 'zh-TW', timezoneId: 'Asia/Taipei' }
+
 export default defineConfig({
   testDir: 'tests/e2e',
   testMatch: 'pwa.spec.ts',
@@ -23,10 +27,13 @@ export default defineConfig({
   },
 
   webServer: {
-    command: 'npx vite preview --base /outgoing-map/ --port 5193 --strictPort',
+    command: `npx vite preview --base /outgoing-map/ --port 5193 --strictPort --outDir ${dist}`,
     url: 'http://localhost:5193/outgoing-map/',
     reuseExistingServer: false,
   },
 
-  projects: [{ name: 'chromium', use: { ...devices['Pixel 7'], locale: 'zh-TW', timezoneId: 'Asia/Taipei', launchOptions: { args: chromiumGL } } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Pixel 7'], ...device, launchOptions: { args: chromiumGL } } },
+    { name: 'webkit', use: { ...devices['iPhone 15'], ...device } },
+  ],
 })

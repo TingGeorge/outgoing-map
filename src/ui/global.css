@@ -52,7 +52,7 @@ select {
 input,
 textarea,
 select {
-  font-size: 16px;
+  font-size: 1rem;
 }
 
 button,

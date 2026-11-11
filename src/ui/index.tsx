@@ -3,6 +3,7 @@ import {
   useId,
   useRef,
   useSyncExternalStore,
+  type MouseEvent,
   type InputHTMLAttributes,
   type ReactNode,
   type TextareaHTMLAttributes,
@@ -44,7 +45,7 @@ export interface ButtonProps {
   block?: boolean
   href?: string
   target?: string
-  onClick?: () => void
+  onClick?: (event: MouseEvent<HTMLElement>) => void
   type?: 'button' | 'submit'
   disabled?: boolean
 }

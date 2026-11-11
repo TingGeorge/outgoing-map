@@ -92,10 +92,10 @@ describe('buildRoute', () => {
     expect(one.totalDistanceM).toBe(0)
   })
 
-  test('out-of-order times: the longest in-order run is kept, glitches lose their time', () => {
-    const backward = buildRoute([tp(121, null, t0), tp(121.001, null, t0 + MIN), tp(121.002, null, t0 - 99 * MIN), tp(121.003, null, t0 + 3 * MIN)], [])
-    expect(backward.points.map((p) => p.time)).toEqual([t0, t0 + MIN, null, t0 + 3 * MIN])
-    expect(backward.points.map((p) => p.lon)).toEqual([121, 121.001, 121.002, 121.003])
+  test('out-of-order times with some points untimed: file order is kept, the longest in-order run keeps its times', () => {
+    const backward = buildRoute([tp(121, null, t0), tp(121.001, null, t0 + MIN), tp(121.002, null, t0 - 99 * MIN), tp(121.0025, null, null), tp(121.003, null, t0 + 3 * MIN)], [])
+    expect(backward.points.map((p) => p.time)).toEqual([t0, t0 + MIN, null, null, t0 + 3 * MIN])
+    expect(backward.points.map((p) => p.lon)).toEqual([121, 121.001, 121.002, 121.0025, 121.003])
 
     const forward = buildRoute([tp(121, null, t0), tp(121.001, null, t0 + 999 * MIN), tp(121.002, null, null), tp(121.003, null, t0 + 2 * MIN), tp(121.004, null, t0 + 3 * MIN)], [])
     expect(forward.points.map((p) => p.time)).toEqual([t0, null, null, t0 + 2 * MIN, t0 + 3 * MIN])
@@ -103,6 +103,54 @@ describe('buildRoute', () => {
 
     const equal = buildRoute([tp(121, null, t0), tp(121.001, null, t0)], [])
     expect(equal.points.map((p) => p.time)).toEqual([t0, t0])
+  })
+
+  test('when every point has a time, a shuffled track is put back in time order (stable)', () => {
+    const walk = [0, 1, 2, 3, 4, 5].map((i) => tp(121 + i * 0.001, 1000 + i * 10, t0 + i * MIN))
+    const shuffled = [walk[3]!, walk[0]!, walk[5]!, walk[1]!, walk[4]!, walk[2]!]
+
+    const ordered = buildRoute(shuffled, [])
+    expect(ordered.points.map((p) => p.lon)).toEqual(walk.map((p) => p.lon))
+    expect(ordered.totalDistanceM).toBeCloseTo(buildRoute(walk, []).totalDistanceM, 6)
+    expect(routeStats(ordered).ascentM).toBe(50)
+    expect(shuffled[0]).toBe(walk[3])
+
+    const ties = buildRoute([tp(121.002, null, t0 + MIN), tp(121.001, null, t0), tp(121.003, null, t0)], [])
+    expect(ties.points.map((p) => p.lon)).toEqual([121.001, 121.003, 121.002])
+  })
+
+  test('a jump that is both far and too fast to walk is a gap: no distance, no climb', () => {
+    const first = [0, 1, 2, 3].map((i) => tp(121 + i * 0.001, 2000 + i * 10, t0 + i * MIN))
+    const jumpLon = 121.003 + 5000 / distanceM({ lat: 24, lon: 121 }, { lat: 24, lon: 122 })
+    const second = [0, 1, 2, 3].map((i) => tp(jumpLon + i * 0.001, 2400 + i * 10, t0 + (13 + i) * MIN))
+    const joined = buildRoute([...first, ...second], [])
+
+    const walked = buildRoute(first, []).totalDistanceM * 2
+    expect(distanceM(first[3]!, second[0]!)).toBeCloseTo(5000, -1)
+    expect(joined.totalDistanceM).toBeCloseTo(walked, 6)
+    expect(joined.points[4]!.distanceM).toBe(joined.points[3]!.distanceM)
+    expect(routeStats(joined)).toMatchObject({ ascentM: 60, descentM: 0, durationMs: 16 * MIN, maxEleM: 2430 })
+    expect(sampleAtDistance(joined, joined.points[3]!.distanceM)).toMatchObject({ lat: 24 })
+
+    const untimed = buildRoute([...first, ...second].map((p) => ({ ...p, time: null })), [])
+    expect(untimed.totalDistanceM).toBeGreaterThan(5000)
+
+    const slow = buildRoute([...first, ...second.map((p) => ({ ...p, time: p.time! + 60 * MIN }))], [])
+    expect(slow.totalDistanceM).toBeGreaterThan(5000)
+  })
+
+  test('a pause and resume 20 m away measures exactly as one walk', () => {
+    const before = [0, 1, 2].map((i) => tp(121 + i * 0.001, 2000 + i * 10, t0 + i * MIN))
+    const resumeLon = 121.002 + 20 / distanceM({ lat: 24, lon: 121 }, { lat: 24, lon: 122 })
+    const after = [0, 1, 2].map((i) => tp(resumeLon + i * 0.001, 2030 + i * 10, t0 + (62 + i) * MIN))
+    const route = buildRoute([...before, ...after], [])
+
+    let expected = 0
+    const all = [...before, ...after]
+    for (let i = 1; i < all.length; i++) expected += distanceM(all[i - 1]!, all[i]!)
+
+    expect(route.totalDistanceM).toBeCloseTo(expected, 9)
+    expect(routeStats(route)).toMatchObject({ ascentM: 50, durationMs: 64 * MIN })
   })
 })
 

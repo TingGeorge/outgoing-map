@@ -47,7 +47,7 @@ describe('validateKey', () => {
   })
 
   it('reads a CORS-blocked rejection as invalid when the service itself is reachable', async () => {
-    const mock = vi.fn((url: string) =>
+    const mock = vi.fn((url: string, _init?: RequestInit) =>
       url.includes('apikey=') ? Promise.reject(new TypeError('Failed to fetch')) : Promise.resolve(new Response('png')),
     )
     vi.stubGlobal('fetch', mock)
@@ -60,6 +60,17 @@ describe('validateKey', () => {
     vi.stubGlobal('fetch', offline())
 
     expect(await validateKey(GOOD)).toBe('network-error')
+  })
+
+  it('offline with a warm HTTP cache: network-error, never invalid', async () => {
+    const mock = vi.fn((url: string, init?: RequestInit) => {
+      if (init?.cache !== 'no-store' && !url.includes('apikey=')) return Promise.resolve(new Response('cached png'))
+      return Promise.reject(new TypeError('Failed to fetch'))
+    })
+    vi.stubGlobal('fetch', mock)
+
+    expect(await validateKey(GOOD)).toBe('network-error')
+    expect(mock.mock.calls.map(([, init]) => init?.cache)).toEqual(['no-store', 'no-store'])
   })
 
   it('reports network-error on timeout without probing', async () => {

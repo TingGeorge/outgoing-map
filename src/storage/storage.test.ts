@@ -5,7 +5,7 @@ import { deleteDB, openDB } from 'idb'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { parseGpx } from '../core'
 import * as storage from './index'
-import { PHOTO_FAILURE } from './index'
+import { IMPORT_LIMITS, PHOTO_FAILURE, TEXT_LIMITS, sniffImage } from './index'
 
 vi.mock('./image', () => ({
   renderImage: vi.fn(async (file: Blob, _orientation: number, withFull: boolean) => {
@@ -192,20 +192,47 @@ describe('photos', () => {
 
   test('undecodable files go into failed with a reason and the rest continue', async () => {
     const trip = await storage.createTrip({ title: 't' })
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
 
     const result = await storage.addPhotos(trip.id, [
       new File(['not a jpeg'], 'broken.jpg', { type: 'image/jpeg' }),
-      new File(['ftypheic'], 'IMG_0002.HEIC', { type: 'image/heic' }),
+      new File([new Uint8Array([0, 0, 0, 0x18]), 'ftypheic', new Uint8Array(12)], 'IMG_0002.HEIC', { type: 'image/heic' }),
       new File(['hello'], 'notes.txt', { type: 'text/plain' }),
+      new File([png], 'damaged.png', { type: 'image/png' }),
       jpeg(PHOTOS[2]!),
     ])
 
     expect(result.failed).toEqual([
-      { fileName: 'broken.jpg', reason: PHOTO_FAILURE.unreadable },
+      { fileName: 'broken.jpg', reason: PHOTO_FAILURE.notImage },
       { fileName: 'IMG_0002.HEIC', reason: PHOTO_FAILURE.heic },
       { fileName: 'notes.txt', reason: PHOTO_FAILURE.notImage },
+      { fileName: 'damaged.png', reason: PHOTO_FAILURE.unreadable },
     ])
     expect(result.added.map((p) => p.fileName)).toEqual([PHOTOS[2]])
+  })
+
+  test('a photo is recognised by its leading bytes, not by its name or the decoder', async () => {
+    const bytes = (...parts: (string | number[])[]) =>
+      new Uint8Array(parts.flatMap((p) => (typeof p === 'string' ? Array.from(p, (c) => c.charCodeAt(0)) : p)))
+    const box = (brand: string) => bytes([0, 0, 0, 0x18], 'ftyp', brand, [0, 0, 0, 0])
+
+    expect(sniffImage(bytes([0xff, 0xd8, 0xff, 0xe1]))).toBe('jpeg')
+    expect(sniffImage(bytes([0x89], 'PNG\r\n\x1a\n'))).toBe('png')
+    expect(sniffImage(bytes('GIF89a'))).toBe('gif')
+    expect(sniffImage(bytes('RIFF', [1, 2, 3, 4], 'WEBPVP8 '))).toBe('webp')
+    expect(sniffImage(bytes('II*', [0]))).toBe('tiff')
+    expect(sniffImage(bytes('MM', [0], '*'))).toBe('tiff')
+    for (const brand of ['heic', 'heix', 'mif1', 'avif']) expect(sniffImage(box(brand)), brand).toBe('heif')
+
+    for (const other of [box('isom'), box('mp42'), box('qt  '), bytes([0xff, 0xd8]), bytes('RIFF', [0, 0, 0, 0], 'WAVE'), bytes('%PDF-1.7'), bytes()]) {
+      expect(sniffImage(other)).toBeNull()
+    }
+
+    const trip = await storage.createTrip({ title: 't' })
+    const video = new File([box('isom'), new Uint8Array(64)], 'IMG_0003.jpg', { type: 'image/jpeg' })
+    const result = await storage.addPhotos(trip.id, [video, new File([video], 'IMG_0003.mp4', { type: 'video/mp4' })])
+
+    expect(result.failed.map((f) => f.reason)).toEqual([PHOTO_FAILURE.notImage, PHOTO_FAILURE.notImage])
   })
 
   test('updatePhoto changes the caption and returns the photo', async () => {
@@ -337,6 +364,7 @@ describe('export and import', () => {
     const manifest = (m: object) => strToU8(JSON.stringify(m))
     const base = { format: 'hiking-memories-trip', version: 1, exportedAt: 0, track: null }
     const trip = { title: 't', diary: '' }
+    const photo = { id: 'p', fileName: 'a.jpg', file: 'photos/p.jpg', takenAt: null, gps: null, caption: '' }
 
     await expect(storage.importTrip(new Blob(['hello']))).rejects.toThrow('這個檔案不是登山回憶的匯出檔')
     await expect(storage.importTrip(new Blob([zipSync({ 'a.txt': strToU8('x') })]))).rejects.toThrow('不是登山回憶的匯出檔')
@@ -345,12 +373,127 @@ describe('export and import', () => {
       storage.importTrip(new Blob([zipSync({ 'manifest.json': manifest({ ...base, version: 99, trip, photos: [] }) })])),
     ).rejects.toThrow('較新版本')
     await expect(
-      storage.importTrip(
-        new Blob([zipSync({ 'manifest.json': manifest({ ...base, trip, photos: [{ id: 'p', fileName: 'a.jpg', file: 'photos/p.jpg' }] }) })]),
-      ),
+      storage.importTrip(new Blob([zipSync({ 'manifest.json': manifest({ ...base, trip, photos: [photo] }) })])),
     ).rejects.toThrow('匯出檔不完整，缺少照片 a.jpg')
 
+    const notJpeg = zipSync({ 'manifest.json': manifest({ ...base, trip, photos: [photo] }), 'photos/p.jpg': strToU8('GIF89a') })
+    await expect(storage.importTrip(new Blob([notJpeg]))).rejects.toThrow('匯出檔裡有照片無法讀取')
+
     expect(await storage.listTrips()).toEqual([])
+  })
+
+  test('a crafted manifest of any wrong shape is refused as not an export', async () => {
+    const point = { lat: 24, lon: 121, ele: null, time: null }
+    const photo = { id: 'p', fileName: 'a.jpg', file: 'photos/p.jpg', takenAt: null, gps: null, caption: '' }
+    const good = { format: 'hiking-memories-trip', version: 1, exportedAt: 0, trip: { title: 't', diary: '', coverPhotoId: null }, track: [point], photos: [] }
+
+    const crafted: unknown[] = [
+      null,
+      [],
+      { ...good, version: '1' },
+      { ...good, trip: null },
+      { ...good, trip: { title: 7, diary: '' } },
+      { ...good, trip: { title: 't' } },
+      { ...good, trip: { ...good.trip, coverPhotoId: 5 } },
+      { ...good, track: {} },
+      { ...good, track: [null] },
+      { ...good, track: [{ ...point, lat: 91 }] },
+      { ...good, track: [{ ...point, lon: '121' }] },
+      { ...good, track: [{ ...point, ele: 'high' }] },
+      { ...good, track: [{ ...point, time: 'noon' }] },
+      { ...good, photos: {} },
+      { ...good, photos: [null] },
+      { ...good, photos: ['photos/p.jpg'] },
+      { ...good, photos: [{ ...photo, file: '../../etc/passwd' }] },
+      { ...good, photos: [{ ...photo, file: '/photos/p.jpg' }] },
+      { ...good, photos: [{ ...photo, file: 7 }] },
+      { ...good, photos: [{ ...photo, fileName: null }] },
+      { ...good, photos: [{ ...photo, caption: undefined }] },
+      { ...good, photos: [{ ...photo, takenAt: '2026' }] },
+      { ...good, photos: [{ ...photo, gps: { lat: 24 } }] },
+      { ...good, photos: [{ ...photo, gps: { lat: 24, lon: 121, ele: null, heading: 'N' } }] },
+      { ...good, photos: [{ ...photo, sourceKey: 3 }] },
+      { ...good, photos: [photo, { ...photo, id: 'q' }] },
+    ]
+
+    for (const m of crafted) {
+      const zip = zipSync({ 'manifest.json': strToU8(JSON.stringify(m)), 'photos/p.jpg': readFileSync(`tests/fixtures/${PHOTOS[0]}`) })
+      await expect(storage.importTrip(new Blob([zip])), JSON.stringify(m)).rejects.toThrow('這個檔案不是登山回憶的匯出檔')
+    }
+
+    expect(await storage.listTrips()).toEqual([])
+    await expect(storage.importTrip(new Blob([zipSync({ 'manifest.json': strToU8(JSON.stringify(good)) })]))).resolves.toMatchObject({ title: 't' })
+  })
+
+  test('over-long text is trimmed and truncated at every entry point', async () => {
+    const long = '山'.repeat(200_000)
+    const title = `  ${'🏔️'.repeat(TEXT_LIMITS.title)}  `
+
+    const created = await storage.createTrip({ title: long, diary: long })
+    expect(created.title).toBe('山'.repeat(TEXT_LIMITS.title))
+    expect(created.diary).toHaveLength(TEXT_LIMITS.diary)
+
+    const renamed = await storage.updateTrip(created.id, { title: '  合歡北峰 ', diary: '  空白留著 ' })
+    expect(renamed).toMatchObject({ title: '合歡北峰', diary: '  空白留著 ' })
+    const emoji = (await storage.updateTrip(created.id, { title })).title
+    expect(emoji.length).toBeLessThanOrEqual(TEXT_LIMITS.title)
+    expect(emoji).toBe('🏔️'.repeat(26) + '🏔')
+
+    const { added } = await storage.addPhotos(created.id, [jpeg(PHOTOS[0]!)])
+    expect((await storage.updatePhoto(added[0]!.id, { caption: long })).caption).toHaveLength(TEXT_LIMITS.caption)
+
+    const manifest = {
+      format: 'hiking-memories-trip',
+      version: 1,
+      exportedAt: 0,
+      trip: { title: long, diary: long, coverPhotoId: null },
+      track: null,
+      photos: [{ id: 'p', fileName: long, file: 'photos/p.jpg', takenAt: null, gps: null, caption: long }],
+    }
+    const zip = zipSync({ 'manifest.json': strToU8(JSON.stringify(manifest)), 'photos/p.jpg': readFileSync(`tests/fixtures/${PHOTOS[0]}`) })
+    const imported = await storage.importTrip(new Blob([zip]))
+    const [p] = await storage.listPhotos(imported.id)
+
+    expect(imported.title).toHaveLength(TEXT_LIMITS.title)
+    expect(imported.diary).toHaveLength(TEXT_LIMITS.diary)
+    expect(p!.caption).toHaveLength(TEXT_LIMITS.caption)
+    expect(p!.fileName).toHaveLength(TEXT_LIMITS.fileName)
+  })
+
+  test('hostile archives are refused before they are inflated', async () => {
+    const m = { format: 'hiking-memories-trip', version: 1, exportedAt: 0, trip: { title: 't', diary: '' }, track: null, photos: [] }
+    const manifest = strToU8(JSON.stringify(m))
+
+    const huge = { size: IMPORT_LIMITS.archiveBytes + 1 } as Blob
+    await expect(storage.importTrip(huge)).rejects.toThrow('這個匯出檔太大')
+
+    const many: Record<string, Uint8Array> = { 'manifest.json': manifest }
+    for (let i = 0; i < IMPORT_LIMITS.entries; i++) many[`x/${i}`] = new Uint8Array(0)
+    await expect(storage.importTrip(new Blob([zipSync(many)]))).rejects.toThrow('這個匯出檔太大')
+
+    const bomb = zipSync({ 'manifest.json': manifest, 'photos/p.jpg': new Uint8Array(IMPORT_LIMITS.entryBytes + 1) }, { level: 9 })
+    expect(bomb.length).toBeLessThan(1024 * 1024)
+    await expect(storage.importTrip(new Blob([bomb]))).rejects.toThrow('這個匯出檔太大')
+
+    const claim = (zip: Uint8Array<ArrayBuffer>, originalSize: number) => {
+      const view = new DataView(zip.buffer)
+      for (let o = 0; o < zip.length - 4; o++) {
+        if (view.getUint32(o, true) !== 0x02014b50) continue
+        const name = new TextDecoder().decode(zip.subarray(o + 46, o + 46 + view.getUint16(o + 28, true)))
+        if (name.startsWith('photos/')) view.setUint32(o + 24, originalSize, true)
+      }
+      return new Blob([zip])
+    }
+
+    const lying = zipSync({ 'manifest.json': manifest, 'photos/p.jpg': new Uint8Array(10) }, { level: 9 })
+    await expect(storage.importTrip(claim(lying, 0xfffffff0))).rejects.toThrow('這個匯出檔太大')
+
+    const spread: Record<string, Uint8Array> = { 'manifest.json': manifest }
+    for (let i = 0; i <= IMPORT_LIMITS.totalBytes / IMPORT_LIMITS.entryBytes; i++) spread[`photos/${i}.jpg`] = new Uint8Array(10)
+    await expect(storage.importTrip(claim(zipSync(spread, { level: 9 }), IMPORT_LIMITS.entryBytes))).rejects.toThrow('這個匯出檔太大')
+
+    const traversal = zipSync({ 'manifest.json': manifest, '../evil.jpg': new Uint8Array(1), '/abs.jpg': new Uint8Array(1), 'photos/../../x.jpg': new Uint8Array(1) })
+    await expect(storage.importTrip(new Blob([traversal]))).resolves.toMatchObject({ title: 't', photoCount: 0 })
   })
 })
 

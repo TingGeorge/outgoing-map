@@ -185,3 +185,147 @@ test('leaving an empty form needs no confirmation', async ({ page }) => {
   await page.getByRole('button', { name: '回首頁' }).click()
   await expect(page).toHaveURL(/#\/$/)
 })
+
+const TWO_DAY_GPX = `<?xml version="1.0"?><gpx version="1.1" creator="t"><trk><trkseg><trkpt lat="24.1" lon="121.2"><ele>3000</ele><time>2026-11-07T12:00:00Z</time></trkpt><trkpt lat="24.11" lon="121.21"><ele>3200</ele><time>2026-11-08T02:00:00Z</time></trkpt></trkseg></trk></gpx>`
+const STORAGE = '/src/storage/index.ts'
+
+const tripCount = (page: Page) =>
+  page.evaluate(async (path) => (await (await import(path)).listTrips()).length, STORAGE)
+
+test('a two-day track shows both days and gets a natural default title', async ({ page }) => {
+  await page.goto('./#/new')
+  await gpxInput(page).setInputFiles({ name: 'two-day.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(TWO_DAY_GPX) })
+
+  await expect(page.getByText('2026 年 11 月 7 日　週六 – 8 日　週日')).toBeVisible()
+  await expect(page.getByText('20:00 出發，10:00 結束')).toBeVisible()
+  await expect(page.getByLabel('這趟的名字')).toHaveValue('11 月 7–8 日的山')
+})
+
+test('the title is capped at 80 with a counter near the limit', async ({ page }) => {
+  await page.goto('./#/new')
+  const title = page.getByLabel('這趟的名字')
+
+  await expect(title).toHaveAttribute('maxlength', '80')
+  await expect(page.getByText(/\d+ \/ 80/)).toHaveCount(0)
+
+  await title.fill('')
+  await title.click()
+  await page.keyboard.insertText('山'.repeat(95))
+  expect((await title.inputValue()).length).toBe(80)
+  await expect(page.getByText('80 / 80')).toBeVisible()
+})
+
+test('a very long GPX name and file name do not overflow at 320', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 })
+  await page.goto('./#/new')
+  const gpx = TWO_DAY_GPX.replace('<trk>', `<trk><name>${'x'.repeat(200)}</name>`)
+  await gpxInput(page).setInputFiles({ name: `${'y'.repeat(80)}.gpx`, mimeType: 'application/gpx+xml', buffer: Buffer.from(gpx) })
+
+  await expect(page.getByLabel('這趟的名字')).toHaveValue('x'.repeat(80))
+  await noHorizontalScroll(page)
+})
+
+test('double-click and Enter repeats on 建立回憶 make exactly one trip', async ({ page }) => {
+  await page.goto('./#/new')
+  await gpxInput(page).setInputFiles(fixture('hehuan-north.gpx'))
+  await page.getByRole('button', { name: '建立回憶' }).dblclick()
+  await expect(page.getByRole('heading', { name: '回憶存好了' })).toBeVisible()
+  expect(await tripCount(page)).toBe(1)
+
+  await page.goto('./#/')
+  await page.goto('./#/new')
+  await gpxInput(page).setInputFiles(fixture('hehuan-north.gpx'))
+  await page.getByRole('button', { name: '建立回憶' }).focus()
+  await page.keyboard.down('Enter')
+  await page.keyboard.down('Enter')
+  await page.keyboard.up('Enter')
+  await expect(page.getByRole('heading', { name: '回憶存好了' })).toBeVisible()
+  expect(await tripCount(page)).toBe(2)
+})
+
+test('short landscape: the create button sits below the content, not over it', async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 })
+  await page.goto('./#/new')
+  await gpxInput(page).setInputFiles(fixture('hehuan-north.gpx'))
+
+  const bar = page.getByRole('button', { name: '建立回憶' })
+  await bar.scrollIntoViewIfNeeded()
+  const main = await page.locator('main').boundingBox()
+  const button = await bar.boundingBox()
+  expect(button!.y).toBeGreaterThanOrEqual(main!.y + main!.height - 1)
+
+  await page.evaluate(() => scrollTo(0, 0))
+  const heading = await page.getByRole('heading', { name: '照片' }).boundingBox()
+  const sticky = await page.locator('main + div').evaluate((el) => getComputedStyle(el).position)
+  expect(sticky).toBe('static')
+  expect(heading).not.toBeNull()
+  await noHorizontalScroll(page)
+})
+
+test('keyboard only: the leave dialog takes focus, Escape closes it, focus returns to the opener', async ({ page, browserName }) => {
+  const tab = () => page.keyboard.press(`${browserName === 'webkit' && process.platform === 'darwin' ? 'Alt+' : ''}Tab`)
+  await page.goto('./#/new')
+  await photoInput(page).setInputFiles(PHOTOS.slice(0, 1))
+
+  await page.getByRole('button', { name: '回首頁' }).focus()
+  await page.keyboard.press('Enter')
+  const dialog = page.getByRole('dialog', { name: '要離開嗎？' })
+  await expect(dialog).toBeVisible()
+
+  expect(await page.evaluate(() => !!document.activeElement?.closest('dialog'))).toBe(true)
+  await tab()
+  await expect(dialog.getByRole('button', { name: '離開' })).toBeFocused()
+
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(page).toHaveURL(/#\/new$/)
+  await expect(page.getByText('已選 1 張照片')).toBeVisible()
+})
+
+test('keyboard only: the form is reachable in reading order, with a visible ring', async ({ page, browserName }) => {
+  const tab = () => page.keyboard.press(`${browserName === 'webkit' && process.platform === 'darwin' ? 'Alt+' : ''}Tab`)
+  await page.goto('./#/new')
+  await expect(page.getByRole('heading', { level: 1, name: '新的回憶' })).toBeVisible()
+
+  for (const name of ['回首頁', '選擇 GPX 檔', '選擇照片']) {
+    await tab()
+    await expect(page.getByRole('button', { name })).toBeFocused()
+    const ring = await page.evaluate(() => parseFloat(getComputedStyle(document.activeElement!).outlineWidth))
+    expect(ring).toBeGreaterThanOrEqual(2)
+  }
+
+  await tab()
+  await expect(page.getByLabel('這趟的名字')).toBeFocused()
+  expect(await page.evaluate(() => getComputedStyle(document.activeElement!).outlineWidth)).not.toBe('0px')
+})
+
+for (const zoom of [150, 200]) {
+  test(`${zoom}% text: the form and the sticky bar stay usable`, async ({ page }) => {
+    await page.goto('./#/new')
+    await gpxInput(page).setInputFiles(fixture('hehuan-north.gpx'))
+    await page.addStyleTag({ content: `html{font-size:${zoom}%}` })
+
+    await noHorizontalScroll(page)
+    const bar = await page.locator('main + div').boundingBox()
+    expect(bar!.height).toBeLessThan(page.viewportSize()!.height * 0.3)
+    await expect(page.getByRole('button', { name: '建立回憶' })).toBeVisible()
+  })
+}
+
+test('reload while photos are processing leaves either nothing or a card that renders', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.goto('./#/new')
+  await gpxInput(page).setInputFiles(fixture('hehuan-north.gpx'))
+  await photoInput(page).setInputFiles(PHOTOS)
+  await page.getByRole('button', { name: '建立回憶' }).click()
+  await expect(page.getByRole('heading', { name: '正在存你的回憶' })).toBeVisible()
+  await page.reload()
+  errors.length = 0
+
+  await page.goto('./#/')
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('想回味哪一座山？')
+  const text = await page.locator('main').innerText()
+  expect(text).not.toMatch(/NaN|undefined|null/)
+  expect(errors).toEqual([])
+})

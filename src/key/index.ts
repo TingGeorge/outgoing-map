@@ -23,7 +23,7 @@ export async function validateKey(raw: string): Promise<KeyCheck> {
   if (!/^[A-Za-z0-9]{16,64}$/.test(key)) return 'invalid'
 
   try {
-    const res = await fetch(`${TEST_TILE}?apikey=${key}`, { signal: AbortSignal.timeout(TIMEOUT_MS) })
+    const res = await fetch(`${TEST_TILE}?apikey=${key}`, { cache: 'no-store', signal: AbortSignal.timeout(TIMEOUT_MS) })
 
     if (res.ok) return 'valid'
     if (res.status === 401 || res.status === 403) return 'invalid'
@@ -34,7 +34,7 @@ export async function validateKey(raw: string): Promise<KeyCheck> {
     // ponytail: Thunderforest's 401 carries no CORS header, so a rejected key looks like an offline fetch;
     // a keyless request (200 with CORS) tells the two apart. A 5xx or 429 without CORS reads as 'invalid'.
     try {
-      const probe = await fetch(TEST_TILE, { signal: AbortSignal.timeout(TIMEOUT_MS) })
+      const probe = await fetch(TEST_TILE, { cache: 'no-store', signal: AbortSignal.timeout(TIMEOUT_MS) })
       return probe.ok ? 'invalid' : 'network-error'
     } catch {
       return 'network-error'

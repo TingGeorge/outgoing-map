@@ -32,6 +32,10 @@ export function photoEle(photo: Photo): number | null {
 
 const fileDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' })
 
+export function short(text: string, max = 200): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text
+}
+
 export function exportFileName(title: string, at: number): string {
-  return `${title}-${fileDate.format(at)}.hiking.zip`.replace(/[/\\:*?"<>|]/g, '-')
+  return `${short(title, 80).replace(/…$/, '')}-${fileDate.format(at)}.hiking.zip`.replace(/[/\\:*?"<>|]/g, '-')
 }

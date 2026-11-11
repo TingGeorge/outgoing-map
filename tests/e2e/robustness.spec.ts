@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { watch } from './helpers'
+import { fakeImagery, watch } from './helpers'
 
 const FAKE_KEY = 'ffffffffffffffffffffffffffffffff'
 
@@ -26,6 +26,7 @@ async function setup(page: Page) {
     ;(window as { lostContexts?: () => number }).lostContexts = () => lost
   }, FAKE_KEY)
   await page.route('https://tile.thunderforest.com/**', (route) => route.fulfill({ status: 401, headers: { 'access-control-allow-origin': '*' }, body: '' }))
+  await fakeImagery(page)
 }
 
 async function seed(page: Page): Promise<string> {
@@ -55,7 +56,9 @@ test('home, journal and flyover ten times over leak no object URLs or WebGL cont
     await expect(page.locator('ol').getByRole('button', { name: /^打開照片/ })).toHaveCount(4)
 
     await page.getByRole('link', { name: '立體播放' }).click()
-    await expect(page.locator('[data-phase]')).toHaveAttribute('data-phase', /ready|network/, { timeout: 60_000 })
+    await expect(page.locator('[data-phase]')).toHaveAttribute('data-phase', 'ready', { timeout: 60_000 })
+    await expect(page.locator('[data-phase]')).toHaveAttribute('data-state', 'playing')
+    await expect.poll(() => page.locator('[data-distance-m]').getAttribute('data-distance-m').then(Number), { timeout: 10_000 }).toBeGreaterThan(0)
 
     await page.getByRole('button', { name: '關閉播放' }).click()
     await expect(page).toHaveURL(new RegExp(`#/trip/${id}$`))

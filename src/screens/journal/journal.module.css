@@ -30,8 +30,9 @@
 }
 
 .hero :global(.maplibregl-ctrl-attrib) {
+  max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 70px);
   margin: 0 6px 6px 0;
-  padding: 2px 8px;
+  padding: 0 8px;
   border-radius: 10px;
   background: rgba(251, 251, 244, 0.9);
   color: var(--color-ink);
@@ -41,7 +42,16 @@
 }
 
 .hero :global(.maplibregl-ctrl-attrib a) {
+  display: inline-block;
+  padding: 4px 0;
   color: var(--color-ink);
+  text-underline-offset: 2px;
+}
+
+.hero :global(.maplibregl-ctrl-attrib a:focus-visible) {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 0;
+  border-radius: 4px;
 }
 
 .hero :global(.maplibregl-cooperative-gesture-screen) {
@@ -221,6 +231,21 @@
   bottom: 26px;
 }
 
+.toLeft,
+.toRight {
+  top: 50%;
+  translate: 0 -50%;
+}
+
+.toLeft {
+  left: auto;
+  right: 22px;
+}
+
+.toRight {
+  left: 22px;
+}
+
 .poiName {
   font-size: 12px;
   font-weight: 700;
@@ -286,6 +311,11 @@
   font-size: 32px;
   line-height: 1.3;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
 }
 
 .stats {
@@ -365,8 +395,6 @@
   display: flex;
   gap: 14px;
   padding: 8px 20px 10px;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 280px;
 }
 
 .row:has(.photoCard) {
@@ -453,6 +481,33 @@
   from {
     opacity: 0;
   }
+}
+
+.dayHead {
+  padding: 14px 20px 6px;
+}
+
+.dayHead:not(:first-child) {
+  margin-top: 6px;
+  border-top: 2px dashed var(--color-moss-strong);
+}
+
+.dayHead h3 {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-family: var(--font-hand);
+  font-size: var(--text-lg);
+  font-weight: 700;
+}
+
+.dayHead span {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-ink-muted);
+  letter-spacing: 1px;
 }
 
 .restHead {

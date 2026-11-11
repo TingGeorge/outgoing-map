@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { updateTrip } from '../../storage'
+import { useCallback, useId } from 'react'
+import { TEXT_LIMITS, updateTrip } from '../../storage'
+import { useAutosave, type SaveStatus } from './drafts'
 import s from './journal.module.css'
-
-type Status = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
 
 const DEBOUNCE_MS = 700
 
-const STATUS: Record<Status, string> = {
+const STATUS: Record<SaveStatus, string> = {
   idle: '',
   dirty: '',
   saving: '儲存中…',
@@ -16,51 +15,8 @@ const STATUS: Record<Status, string> = {
 
 export function Diary({ tripId, initial }: { tripId: string; initial: string }) {
   const id = useId()
-  const [text, setText] = useState(initial)
-  const [status, setStatus] = useState<Status>('idle')
-  const pending = useRef<string | null>(null)
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
-
-  const flush = useCallback(async () => {
-    clearTimeout(timer.current)
-
-    const value = pending.current
-    if (value === null) return
-
-    pending.current = null
-    setStatus('saving')
-
-    try {
-      await updateTrip(tripId, { diary: value })
-      setStatus(pending.current === null ? 'saved' : 'dirty')
-    } catch {
-      pending.current ??= value
-      setStatus('error')
-    }
-  }, [tripId])
-
-  useEffect(() => {
-    const onHide = () => {
-      if (document.visibilityState === 'hidden') void flush()
-    }
-
-    addEventListener('pagehide', flush)
-    document.addEventListener('visibilitychange', onHide)
-
-    return () => {
-      removeEventListener('pagehide', flush)
-      document.removeEventListener('visibilitychange', onHide)
-      void flush()
-    }
-  }, [flush])
-
-  const change = (value: string) => {
-    setText(value)
-    pending.current = value
-    setStatus('dirty')
-    clearTimeout(timer.current)
-    timer.current = setTimeout(() => void flush(), DEBOUNCE_MS)
-  }
+  const save = useCallback((text: string) => updateTrip(tripId, { diary: text }), [tripId])
+  const { text, status, change, flush } = useAutosave({ trip: tripId }, initial, save, DEBOUNCE_MS)
 
   return (
     <section className={s.diary}>
@@ -81,6 +37,7 @@ export function Diary({ tripId, initial }: { tripId: string; initial: string }) 
         onBlur={() => void flush()}
         placeholder="今天的天氣、路上的風景、和誰一起走…想到什麼就寫下來。"
         rows={5}
+        maxLength={TEXT_LIMITS.diary}
       />
     </section>
   )

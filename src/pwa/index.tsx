@@ -21,6 +21,21 @@ export async function requestPersistentStorage(): Promise<boolean> {
   }
 }
 
+const FONT_URL = /^https:\/\/fonts\.(googleapis|gstatic)\.com\//
+
+export function keepFontsOffline(): void {
+  const sw = navigator.serviceWorker
+  if (!sw || sw.controller) return
+
+  const warm = async () => {
+    await document.fonts.ready
+    const urls = performance.getEntriesByType('resource').map((e) => e.name).filter((url) => FONT_URL.test(url))
+    for (const url of new Set(urls)) fetch(url, { mode: 'cors' }).catch(() => {})
+  }
+
+  sw.addEventListener('controllerchange', warm, { once: true })
+}
+
 export function isStandalone(): boolean {
   try {
     return window.matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true

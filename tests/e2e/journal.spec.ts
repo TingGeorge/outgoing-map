@@ -10,6 +10,7 @@ const CORE = '/src/core/index.ts'
 interface Seed {
   title?: string
   gpx?: string | null
+  gpxXml?: string
   photos?: string[]
   captions?: Record<string, string>
   diary?: string
@@ -26,14 +27,14 @@ async function seed(page: Page, options: Seed = {}): Promise<string> {
   await page.goto('./#/welcome')
 
   return page.evaluate(
-    async ({ title, gpx, photos, captions, diary, STORAGE, CORE }) => {
+    async ({ title, gpx, gpxXml, photos, captions, diary, STORAGE, CORE }) => {
       const storage = await import(STORAGE)
       const core = await import(CORE)
 
       const trip = await storage.createTrip({ title, diary })
 
-      if (gpx) {
-        const xml = await (await fetch(`/tests/fixtures/${gpx}`)).text()
+      if (gpx || gpxXml) {
+        const xml = gpxXml ?? (await (await fetch(`/tests/fixtures/${gpx}`)).text())
         await storage.saveTrack(trip.id, core.parseGpx(xml).points)
       }
 
@@ -50,9 +51,12 @@ async function seed(page: Page, options: Seed = {}): Promise<string> {
 
       return trip.id
     },
-    { title: options.title ?? '合歡北峰', gpx: options.gpx === undefined ? 'hehuan-north.gpx' : options.gpx, photos: options.photos ?? PHOTOS, captions: options.captions ?? {}, diary: options.diary ?? '', STORAGE, CORE },
+    { title: options.title ?? '合歡北峰', gpx: options.gpx === undefined ? 'hehuan-north.gpx' : options.gpx, gpxXml: options.gpxXml, photos: options.photos ?? PHOTOS, captions: options.captions ?? {}, diary: options.diary ?? '', STORAGE, CORE },
   )
 }
+
+const getTitle = (page: Page, id: string) =>
+  page.evaluate(async ({ id, STORAGE }) => (await (await import(STORAGE)).getTrip(id)).title as string, { id, STORAGE })
 
 async function openTrip(page: Page, id: string) {
   await page.goto(`./#/trip/${id}`)
@@ -153,6 +157,35 @@ test.describe('with a fake key', () => {
 
     await page.reload()
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('合歡北峰，看雲去')
+  })
+
+  test('the title, diary and caption fields share the storage limits', async ({ page }) => {
+    const id = await seed(page, { photos: [PHOTOS[0]!] })
+    await openTrip(page, id)
+
+    await page.getByRole('button', { name: '修改名稱' }).click()
+    const field = page.getByLabel('這趟的名字')
+    await expect(field).toHaveAttribute('maxlength', '80')
+
+    await field.fill('山'.repeat(59))
+    await expect(page.getByText('/ 80')).toHaveCount(0)
+
+    await field.fill('山'.repeat(60))
+    await expect(page.getByText('60 / 80')).toBeVisible()
+
+    await field.pressSequentially('山'.repeat(30))
+    await expect(field).toHaveValue('山'.repeat(80))
+    await expect(page.getByText('80 / 80')).toBeVisible()
+    await shot(page, 'title-limit')
+
+    await page.getByRole('button', { name: '儲存' }).click()
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('山'.repeat(10))
+    expect((await getTitle(page, id)).length).toBe(80)
+
+    await expect(page.getByLabel('日記')).toHaveAttribute('maxlength', '100000')
+
+    await photoButtons(page).first().click()
+    await expect(viewer(page).getByLabel('照片說明')).toHaveAttribute('maxlength', '2000')
   })
 
   test('autosaves the diary and keeps it after a reload and a fast navigation', async ({ page }) => {
@@ -469,4 +502,654 @@ test('shows a skeleton while the trip is read', async ({ page }) => {
   await expect(page.getByRole('status', { name: '日誌載入中' })).toBeVisible()
   await shot(page, 'loading')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('合歡北峰', { timeout: 10_000 })
+})
+
+function multiDayGpx(fromUtc: string, toUtc: string) {
+  const from = Date.parse(fromUtc)
+  const to = Date.parse(toUtc)
+  const n = 60
+  const points = Array.from({ length: n + 1 }, (_, i) => {
+    const t = new Date(from + ((to - from) * i) / n).toISOString()
+    return `<trkpt lat="${(24.1674 + i * 0.0004).toFixed(6)}" lon="${(121.2888 + i * 0.0003).toFixed(6)}"><ele>${3000 + i * 3}</ele><time>${t}</time></trkpt>`
+  })
+
+  return `<?xml version="1.0"?><gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1"><trk><trkseg>${points.join('')}</trkseg></trk></gpx>`
+}
+
+const viewer = (page: Page) => page.getByRole('dialog', { name: '照片' })
+
+const mapPins = (page: Page) => page.locator('section[aria-label="路線地圖"] .maplibregl-marker[aria-label^="打開照片"]:visible')
+
+const overlayLevel = (page: Page) => page.evaluate(() => (history.state?.journalOverlay as number | undefined) ?? 0)
+
+async function fromHome(page: Page, id: string) {
+  await page.goto('./#/')
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  await page.evaluate((tripId) => (location.hash = `#/trip/${tripId}`), id)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/合歡北峰|兩天|三天/)
+}
+
+async function backToHome(page: Page) {
+  await page.goBack()
+  await expect(page).toHaveURL(/#\/$/)
+  await expect(page.getByRole('link', { name: /新的回憶|新增/ }).or(page.locator('main')).first()).toBeVisible()
+}
+
+async function useOkTiles(page: Page) {
+  await page.unroute('https://tile.thunderforest.com/**')
+  await page.route('https://tile.thunderforest.com/**', (route) => route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*' }, body: '' }))
+}
+
+test.describe('overlays and Back', () => {
+  test.beforeEach(async ({ page }) => {
+    await useFakeKey(page)
+    await useOkTiles(page)
+  })
+
+  for (const how of ['Escape', 'X', 'Back'] as const) {
+    test(`a photo opened from the enlarged map closes alone with ${how}`, async ({ page }) => {
+      const id = await seed(page)
+      await fromHome(page, id)
+
+      await page.getByRole('button', { name: '放大地圖' }).click()
+      await expect(page.getByRole('button', { name: '縮小地圖' })).toBeVisible()
+      await expect(mapPins(page).first()).toBeVisible({ timeout: 15_000 })
+      await mapPins(page).first().click()
+      await expect(viewer(page)).toBeVisible()
+      expect(await overlayLevel(page)).toBe(2)
+
+      if (how === 'Escape') await page.keyboard.press('Escape')
+      if (how === 'X') await page.getByRole('button', { name: '關閉照片' }).click()
+      if (how === 'Back') await page.goBack()
+
+      await expect(viewer(page)).toBeHidden()
+      await expect(page.getByRole('button', { name: '縮小地圖' })).toBeVisible()
+      await expect.poll(() => overlayLevel(page)).toBe(1)
+      await expect(page).toHaveURL(new RegExp(`#/trip/${id}$`))
+
+      await page.goBack()
+      await expect(page.getByRole('button', { name: '放大地圖' })).toBeVisible()
+      await expect.poll(() => overlayLevel(page)).toBe(0)
+
+      await backToHome(page)
+    })
+  }
+
+  test('closing with the X and then Back goes to the previous page', async ({ page }) => {
+    const id = await seed(page)
+    await fromHome(page, id)
+
+    await photoButtons(page).first().click()
+    await expect(viewer(page)).toBeVisible()
+    await page.getByRole('button', { name: '關閉照片' }).click()
+    await expect(viewer(page)).toBeHidden()
+
+    await mapPins(page).first().click()
+    await expect(viewer(page)).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(viewer(page)).toBeHidden()
+
+    await backToHome(page)
+    await expect(viewer(page)).toHaveCount(0)
+  })
+
+  test('menu then dialog: each Back closes one thing, then leaves the page', async ({ page }) => {
+    const id = await seed(page, { photos: [] })
+    await fromHome(page, id)
+
+    await page.getByRole('button', { name: '更多選項' }).click()
+    await expect(page.getByRole('dialog', { name: '這篇回憶' })).toBeVisible()
+    await page.getByRole('button', { name: /刪除這篇回憶/ }).click()
+    await expect(page.getByRole('dialog', { name: '刪除這篇回憶？' })).toBeVisible()
+    await expect.poll(() => overlayLevel(page)).toBe(1)
+
+    await page.goBack()
+    await expect(page.getByRole('dialog', { name: '刪除這篇回憶？' })).toBeHidden()
+    await expect(page.getByRole('dialog', { name: '這篇回憶' })).toBeHidden()
+    await expect(page).toHaveURL(new RegExp(`#/trip/${id}$`))
+
+    await page.getByRole('button', { name: '修改名稱' }).click()
+    await expect(page.getByLabel('這趟的名字')).toBeVisible()
+    await page.getByRole('button', { name: '取消' }).click()
+    await expect(page.getByLabel('這趟的名字')).toBeHidden()
+
+    await backToHome(page)
+  })
+
+  test('deleting the trip from the menu returns to the page before it', async ({ page }) => {
+    const id = await seed(page, { photos: [] })
+    await fromHome(page, id)
+
+    await page.getByRole('button', { name: '更多選項' }).click()
+    await page.getByRole('button', { name: /刪除這篇回憶/ }).click()
+    await page.getByRole('button', { name: '刪除回憶' }).click()
+
+    await expect(page).toHaveURL(/#\/$/)
+    await page.waitForTimeout(400)
+    await expect(page).toHaveURL(/#\/$/)
+  })
+
+  test('a rapid double Back closes the viewer and the enlarged map, and stays on the journal', async ({ page }) => {
+    const id = await seed(page)
+    await fromHome(page, id)
+
+    await page.getByRole('button', { name: '放大地圖' }).click()
+    await mapPins(page).first().click()
+    await expect(viewer(page)).toBeVisible()
+
+    await page.evaluate(async () => {
+      history.back()
+      await new Promise((r) => setTimeout(r, 30))
+      history.back()
+    })
+
+    await expect(viewer(page)).toBeHidden()
+    await expect(page.getByRole('button', { name: '放大地圖' })).toBeVisible()
+    await expect(page).toHaveURL(new RegExp(`#/trip/${id}$`))
+    await expect.poll(() => overlayLevel(page)).toBe(0)
+
+    await backToHome(page)
+  })
+
+  test('a reload with an overlay open leaves no dead history entry', async ({ page }) => {
+    const id = await seed(page)
+    await fromHome(page, id)
+
+    await page.getByRole('button', { name: '放大地圖' }).click()
+    await mapPins(page).first().click()
+    await expect(viewer(page)).toBeVisible()
+
+    await page.reload()
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    await expect(viewer(page)).toHaveCount(0)
+    await expect.poll(() => overlayLevel(page)).toBe(0)
+    await expect(page).toHaveURL(new RegExp(`#/trip/${id}$`))
+
+    await backToHome(page)
+  })
+
+  test('a deep link opens and closes overlays, then the back button goes home inside the app', async ({ page }) => {
+    const id = await seed(page)
+    await page.goto('about:blank')
+    await page.goto(`./#/trip/${id}`)
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+
+    await photoButtons(page).first().click()
+    await page.getByRole('button', { name: '關閉照片' }).click()
+    await page.getByRole('button', { name: '放大地圖' }).click()
+    await page.goBack()
+    await expect(page.getByRole('button', { name: '放大地圖' })).toBeVisible()
+    await page.getByRole('button', { name: '更多選項' }).click()
+    await page.keyboard.press('Escape')
+    await expect.poll(() => overlayLevel(page)).toBe(0)
+
+    await page.getByRole('button', { name: '回首頁' }).click()
+    await expect(page).toHaveURL(/#\/$/)
+    await page.waitForTimeout(300)
+    await expect(page).toHaveURL(/#\/$/)
+  })
+})
+
+test.describe('nothing typed is lost', () => {
+  test.beforeEach(async ({ page }) => {
+    await useFakeKey(page)
+  })
+
+  for (const wait of [0, 150, 300]) {
+    test(`the diary survives a reload ${wait} ms after typing`, async ({ page }) => {
+      const id = await seed(page, { photos: [], diary: '原本的日記' })
+      await openTrip(page, id)
+
+      await page.getByLabel('日記').fill(`原本的日記，再補一句 ${wait}`)
+      if (wait) await page.waitForTimeout(wait)
+      await page.reload()
+
+      await expect(page.getByLabel('日記')).toHaveValue(`原本的日記，再補一句 ${wait}`)
+      await expect.poll(() => page.evaluate(async ([path, tripId]) => (await (await import(path!)).getTrip(tripId))?.diary, [STORAGE, id])).toBe(`原本的日記，再補一句 ${wait}`)
+      await expect.poll(() => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('journal-draft:')).length)).toBe(0)
+    })
+
+    test(`a caption survives a reload ${wait} ms after typing`, async ({ page }) => {
+      const id = await seed(page)
+      await openTrip(page, id)
+
+      await photoButtons(page).first().click()
+      await viewer(page).getByLabel('照片說明').fill(`caption before home ${wait}`)
+      if (wait) await page.waitForTimeout(wait)
+      await page.reload()
+
+      await expect(page.locator('main').getByText(`caption before home ${wait}`)).toBeVisible()
+      await photoButtons(page).first().click()
+      await expect(viewer(page).getByLabel('照片說明')).toHaveValue(`caption before home ${wait}`)
+    })
+  }
+
+  test('text typed while the tab is hidden and then closed comes back', async ({ page, context }) => {
+    const id = await seed(page)
+    await openTrip(page, id)
+
+    await page.getByLabel('日記').fill('關掉分頁前寫的')
+    await photoButtons(page).first().click()
+    await viewer(page).getByLabel('照片說明').fill('關掉分頁前的說明')
+
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await page.close({ runBeforeUnload: false })
+
+    const next = await context.newPage()
+    await next.goto(`./#/trip/${id}`)
+    await expect(next.getByLabel('日記')).toHaveValue('關掉分頁前寫的')
+    await expect(next.locator('main').getByText('關掉分頁前的說明')).toBeVisible()
+  })
+
+  test('typing fast in the caption never drops words while saves land', async ({ page }) => {
+    const id = await seed(page)
+    await openTrip(page, id)
+
+    await photoButtons(page).first().click()
+    const field = viewer(page).getByLabel('照片說明')
+    await field.click()
+
+    for (const word of ['caption ', 'before ', 'home ', 'and ', 'after']) {
+      await page.keyboard.type(word, { delay: 30 })
+      await page.waitForTimeout(820)
+    }
+
+    await expect(field).toHaveValue('caption before home and after')
+    await expect(viewer(page).getByText('已儲存')).toBeVisible()
+    await page.reload()
+    await expect(page.locator('main').getByText('caption before home and after')).toBeVisible()
+  })
+
+  test('stale and orphan drafts are discarded, a newer one is applied', async ({ page }) => {
+    const id = await seed(page, { photos: [], diary: '另一個分頁後來存的' })
+
+    await page.evaluate((tripId) => {
+      localStorage.setItem(`journal-draft:${tripId}/diary`, JSON.stringify({ trip: tripId, text: '很久以前的草稿', at: 1, base: '0:0' }))
+      localStorage.setItem('journal-draft:gone/diary', JSON.stringify({ trip: 'gone', text: '已刪除的回憶', at: Date.now(), base: '0:0' }))
+      localStorage.setItem(`journal-draft:${tripId}/gone-photo`, JSON.stringify({ trip: tripId, photo: 'gone-photo', text: '已刪除的照片', at: Date.now(), base: '0:0' }))
+    }, id)
+
+    await openTrip(page, id)
+    await expect(page.getByLabel('日記')).toHaveValue('另一個分頁後來存的')
+    await expect.poll(() => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('journal-draft:')).length)).toBe(0)
+
+    await page.evaluate((tripId) => {
+      localStorage.setItem(`journal-draft:${tripId}/diary`, JSON.stringify({ trip: tripId, text: '比存檔新的草稿', at: Date.now() + 1000, base: '0:0' }))
+    }, id)
+    await page.reload()
+    await expect(page.getByLabel('日記')).toHaveValue('比存檔新的草稿')
+  })
+
+  test('without localStorage the diary still autosaves', async ({ page }) => {
+    await page.addInitScript(() => {
+      const set = Storage.prototype.setItem
+      Storage.prototype.setItem = function (k: string, v: string) {
+        if (k.startsWith('journal-draft:')) throw new DOMException('full', 'QuotaExceededError')
+        return set.call(this, k, v)
+      }
+    })
+
+    const id = await seed(page, { photos: [] })
+    await openTrip(page, id)
+    await page.getByLabel('日記').fill('沒有草稿也存得起來')
+    await expect(page.getByText('已自動儲存')).toBeVisible()
+    await page.reload()
+    await expect(page.getByLabel('日記')).toHaveValue('沒有草稿也存得起來')
+  })
+
+  test('typing into a 50,000-character diary stays quick', async ({ page }) => {
+    const long = '山'.repeat(50_000)
+    const id = await seed(page, { photos: [], diary: long })
+    await openTrip(page, id)
+
+    const field = page.getByLabel('日記')
+    await field.focus()
+    await page.evaluate(() => {
+      const w = window as unknown as { __lag: number[] }
+      w.__lag = []
+      document.addEventListener('input', () => {
+        const start = performance.now()
+        queueMicrotask(() => setTimeout(() => w.__lag.push(performance.now() - start)))
+      }, true)
+    })
+    await field.evaluate((t: HTMLTextAreaElement) => t.setSelectionRange(t.value.length, t.value.length))
+    await page.keyboard.type('abcdefghijklmnopqrst', { delay: 20 })
+    await expect(page.getByText('已自動儲存')).toBeVisible()
+
+    const lag = await page.evaluate(() => (window as unknown as { __lag: number[] }).__lag)
+    const draftCost = await field.evaluate((t: HTMLTextAreaElement) => {
+      const times: number[] = []
+
+      for (let i = 0; i < 20; i++) {
+        const start = performance.now()
+        localStorage.setItem('journal-draft:measure', JSON.stringify({ trip: 'measure', text: t.value + i, at: Date.now(), base: '0:0' }))
+        times.push(performance.now() - start)
+      }
+
+      localStorage.removeItem('journal-draft:measure')
+      return times.sort((a, b) => a - b)[10]!
+    })
+
+    lag.sort((a, b) => a - b)
+    console.log(`[${test.info().project.name}] keystroke to next task ${lag[Math.floor(lag.length / 2)]!.toFixed(1)} ms median; draft write ${draftCost.toFixed(2)} ms`)
+    expect(draftCost).toBeLessThan(4)
+
+    await page.reload()
+    await expect(page.getByLabel('日記')).toHaveValue(`${long}abcdefghijklmnopqrst`)
+  })
+})
+
+function walkGpx(sections: { lat: number; from: string }[]) {
+  const segs = sections.map(({ lat, from }) => {
+    const points = Array.from({ length: 6 }, (_, i) => {
+      const t = new Date(Date.parse(from) + i * 60_000).toISOString()
+      return `<trkpt lat="${(lat + i * 0.0003).toFixed(6)}" lon="121.2888"><ele>${3000 + i * 4}</ele><time>${t}</time></trkpt>`
+    })
+
+    return `<trkseg>${points.join('')}</trkseg>`
+  })
+
+  return `<?xml version="1.0"?><gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1"><trk>${segs.join('')}</trk></gpx>`
+}
+
+async function recordRoute(page: Page) {
+  await page.goto('./#/welcome')
+  await page.evaluate(async () => {
+    const lib = await (await import('/src/map/maplibre.ts' as string)).loadMapLibre()
+    const w = window as unknown as { __route: unknown }
+    const add = lib.Map.prototype.addSource
+
+    lib.Map.prototype.addSource = function (this: any, id: string, spec: unknown) {
+      const result = add.call(this, id, spec)
+
+      if (id === 'route') {
+        const source = this.getSource(id)
+        const set = source.setData.bind(source)
+        source.setData = (data: any, ...rest: unknown[]) => ((w.__route = data), set(data, ...rest))
+      }
+
+      return result
+    }
+  })
+}
+
+const recordedRoute = (page: Page) => page.evaluate(() => (window as unknown as { __route: any }).__route?.geometry as { type: string; coordinates: number[][] | number[][][] } | undefined)
+
+test.describe('a recording gap', () => {
+  test.beforeEach(async ({ page }) => {
+    await useFakeKey(page)
+  })
+
+  test('is not drawn across: the route has two parts, the profile breaks, scrubbing still works', async ({ page }) => {
+    await recordRoute(page)
+    const xml = walkGpx([
+      { lat: 24.1674, from: '2026-11-07T00:00:00Z' },
+      { lat: 24.2124, from: '2026-11-07T00:15:00Z' },
+    ])
+
+    const id = await seed(page, { photos: [], gpxXml: xml })
+    await openTrip(page, id)
+
+    await expect.poll(() => recordedRoute(page).then((g) => g?.type)).toBe('MultiLineString')
+
+    const geometry = (await recordedRoute(page))!
+    const parts = geometry.coordinates as number[][][]
+    expect(parts.map((part) => part.length)).toEqual([6, 6])
+
+    await expect(page.getByText('距離').locator('..')).toContainText('0.3 公里')
+    await expect(page.getByText('爬升').locator('..')).toContainText('40 公尺')
+
+    const chart = page.getByRole('img', { name: /海拔剖面/ })
+    const strokes = await chart.locator('path').evaluateAll((paths) => paths.map((p) => (p.getAttribute('d') ?? '').match(/M/g)?.length ?? 0))
+    expect(strokes).toEqual([2, 2])
+
+    const box = (await chart.boundingBox())!
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height / 2)
+    await expect(page.getByText(/公里・.* 公尺/)).toBeVisible()
+    expect(await routePixels(page)).toBeGreaterThan(50)
+    await shot(page, 'gap-route')
+  })
+
+  test('a route without a gap stays one line', async ({ page }) => {
+    await recordRoute(page)
+    const id = await seed(page, { photos: [] })
+    await openTrip(page, id)
+
+    await expect.poll(() => recordedRoute(page).then((g) => g?.type)).toBe('LineString')
+    expect(((await recordedRoute(page))!.coordinates as number[][]).length).toBeGreaterThan(100)
+
+    const chart = page.getByRole('img', { name: /海拔剖面/ })
+    const strokes = await chart.locator('path').evaluateAll((paths) => paths.map((p) => (p.getAttribute('d') ?? '').match(/M/g)?.length ?? 0))
+    expect(strokes).toEqual([1, 1])
+  })
+})
+
+test.describe('multi-day trips', () => {
+  test.beforeEach(async ({ page }) => {
+    await useFakeKey(page)
+  })
+
+  test('a two-day trip shows the date range and a heading per day', async ({ page }) => {
+    const id = await seed(page, { title: '合歡北峰兩天', photos: [], gpxXml: multiDayGpx('2026-11-07T06:00:00Z', '2026-11-08T02:00:00Z') })
+    await openTrip(page, id)
+
+    await expect(page.getByText('2026 年 11 月 7 日　週六 – 8 日　週日')).toBeVisible()
+    await expect(page.locator('#journal-day')).toHaveText('這兩天')
+    await expect(page.getByRole('heading', { level: 3, name: /第 \d 天/ })).toHaveText(['第 1 天11 月 7 日　週六', '第 2 天11 月 8 日　週日'])
+    await expect(page.getByText('時間', { exact: true }).locator('..')).toContainText('20:00')
+    await noHorizontalScroll(page)
+    await shot(page, 'two-days', true)
+  })
+
+  test('a three-day trip across a month end', async ({ page }) => {
+    const id = await seed(page, { title: '合歡北峰三天', photos: [], gpxXml: multiDayGpx('2026-11-29T00:00:00Z', '2026-12-01T08:00:00Z') })
+    await openTrip(page, id)
+
+    await expect(page.getByText('2026 年 11 月 29 日　週日 – 12 月 1 日　週二')).toBeVisible()
+    await expect(page.locator('#journal-day')).toHaveText('這三天')
+    await expect(page.getByRole('heading', { level: 3, name: /第 \d 天/ })).toHaveText(['第 1 天11 月 29 日　週日', '第 3 天12 月 1 日　週二'])
+    await expect(page.getByText('時間', { exact: true }).locator('..')).toContainText('56:00')
+  })
+})
+
+test.describe('layout details', () => {
+  test.beforeEach(async ({ page }) => {
+    await useFakeKey(page)
+    await useOkTiles(page)
+  })
+
+  for (const width of [320, 390, 1280]) {
+    test(`map labels and pins stay clear of the controls at ${width} px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: width === 1280 ? 800 : 700 })
+      const id = await seed(page)
+      await openTrip(page, id)
+
+      await expect(page.locator('section[aria-label="路線地圖"] .maplibregl-marker').getByText('合歡北峰', { exact: true })).toBeAttached({ timeout: 15_000 })
+      await page.waitForTimeout(500)
+
+      const clashes = await page.evaluate(() => {
+        const hero = document.querySelector('section[aria-label="路線地圖"]')!
+        const controls = [...hero.querySelectorAll('button, a')].filter((n) => !n.closest('.maplibregl-marker')).map((n) => n.getBoundingClientRect())
+        const marks = [...hero.querySelectorAll('.maplibregl-marker')]
+          .filter((m) => getComputedStyle(m).visibility !== 'hidden')
+          .flatMap((m) => [...m.querySelectorAll('div')].filter((d) => d.textContent && !d.children.length).map((d) => d.closest('div[class*="poiLabel"]') ?? d))
+          .map((n) => n.getBoundingClientRect())
+
+        return marks.filter((r) => controls.some((c) => r.left < c.right && r.right > c.left && r.top < c.bottom && r.bottom > c.top)).length
+      })
+
+      expect(clashes).toBe(0)
+
+      const links = await page.locator('.maplibregl-ctrl-attrib a').evaluateAll((as) => as.map((a) => ({ h: a.getBoundingClientRect().height, target: a.getAttribute('target'), size: getComputedStyle(a).fontSize })))
+      for (const link of links) {
+        expect(link.h).toBeGreaterThanOrEqual(24)
+        expect(link.target).toBe('_blank')
+        expect(link.size).toBe('11px')
+      }
+
+      await noHorizontalScroll(page)
+      await shot(page, 'map-top')
+    })
+  }
+
+  test('an absurdly long title is clamped', async ({ page }) => {
+    const id = await seed(page, { photos: [], title: '很長的名字'.repeat(40_000) })
+    await openTrip(page, id)
+
+    const box = await page.getByRole('heading', { level: 1 }).boundingBox()
+    expect(box!.height).toBeLessThan(140)
+    await noHorizontalScroll(page)
+    await shot(page, 'long-title')
+  })
+
+  test('closing the viewer right after deleting a photo logs nothing', async ({ page }) => {
+    const errors: string[] = []
+    page.on('console', (m) => {
+      if (m.type() === 'error' || /blob/i.test(m.text())) errors.push(m.text().slice(0, 120))
+    })
+
+    const id = await seed(page)
+    await openTrip(page, id)
+
+    for (let i = 0; i < 2; i++) {
+      await photoButtons(page).first().click()
+      await viewer(page).getByRole('button', { name: '刪除照片' }).click()
+      await page.getByRole('button', { name: '刪除', exact: true }).click()
+      await page.getByRole('button', { name: '關閉照片' }).click()
+      await expect(viewer(page)).toBeHidden()
+    }
+
+    await expect(photoButtons(page)).toHaveCount(2)
+    await page.waitForTimeout(500)
+    expect(errors.filter((e) => !/401/.test(e))).toEqual([])
+  })
+})
+
+test.describe('without the web fonts', () => {
+  test.beforeEach(async ({ page }) => {
+    await useFakeKey(page)
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort())
+  })
+
+  for (const width of [390, 320]) {
+    test(`headings fall back to a system kai font and nothing overflows at ${width} px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 })
+      const id = await seed(page, { title: '合歡北峰兩天一夜縱走看雲海與星空', gpxXml: multiDayGpx('2026-11-07T06:00:00Z', '2026-11-08T02:00:00Z') })
+      await openTrip(page, id)
+
+      expect(await page.evaluate(() => [...document.fonts].filter((f) => f.status === 'loaded').length)).toBe(0)
+      await expect(page.getByRole('heading', { level: 3, name: /第 2 天/ })).toBeAttached()
+      await noHorizontalScroll(page)
+      await shot(page, 'no-webfont-top')
+
+      await page.getByRole('heading', { level: 3, name: /第 2 天/ }).scrollIntoViewIfNeeded()
+      await noHorizontalScroll(page)
+      await shot(page, 'no-webfont-day2')
+    })
+  }
+})
+
+async function seedDated(page: Page, count: number): Promise<string> {
+  const id = await seed(page, { title: '合歡北峰兩天', photos: [], gpxXml: multiDayGpx('2026-11-07T06:00:00Z', '2026-11-08T02:00:00Z') })
+
+  await page.evaluate(
+    async ({ id, count, STORAGE }) => {
+      const base = new Uint8Array(await (await fetch('/tests/fixtures/hehuan-0720-gps.jpg')).arrayBuffer())
+      const stamp = '2026:11:07 07:20:10'
+      const at = base.findIndex((_, i) => stamp.split('').every((c, k) => base[i + k] === c.charCodeAt(0)))
+      const files = []
+
+      for (let n = 0; n < count; n++) {
+        const minutes = 14 * 60 + 10 + Math.floor((n * (19 * 60 + 40)) / count)
+        const day = minutes >= 24 * 60 ? '08' : '07'
+        const m = minutes % (24 * 60)
+        const text = `2026:11:${day} ${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}:${String(n % 60).padStart(2, '0')}`
+        const bytes = base.slice()
+        bytes.set(Array.from(text, (c) => c.charCodeAt(0)), at)
+        files.push(new File([bytes], `p${n}.jpg`, { type: 'image/jpeg' }))
+      }
+
+      await (await import(STORAGE)).addPhotos(id, files)
+    },
+    { id, count, STORAGE },
+  )
+
+  return id
+}
+
+test.describe('scrolling a long two-day timeline', () => {
+  test.beforeEach(async ({ page }) => {
+    await useFakeKey(page)
+  })
+
+  test('rows never change size while scrolling, and returning from the viewer keeps the place', async ({ page }) => {
+    const id = await seedDated(page, 24)
+    await openTrip(page, id)
+    await expect(photoButtons(page)).toHaveCount(24)
+    await page.waitForTimeout(1500)
+
+    const before = await page.evaluate(() => document.documentElement.scrollHeight)
+    const height = await page.evaluate(() => innerHeight)
+
+    for (let k = 0; k <= Math.ceil(before / height); k++) {
+      await page.evaluate((y) => window.scrollTo(0, y), k * height)
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-scroll-${String(k).padStart(2, '0')}.png` })
+    }
+
+    await page.waitForTimeout(300)
+    expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(before)
+
+    const target = photoButtons(page).nth(12)
+    await target.scrollIntoViewIfNeeded()
+    const top = await target.evaluate((n) => n.getBoundingClientRect().top)
+    const y = await page.evaluate(() => scrollY)
+
+    await target.click()
+    await expect(viewer(page)).toBeVisible()
+    await page.goBack()
+    await expect(viewer(page)).toBeHidden()
+
+    expect(Math.abs((await page.evaluate(() => scrollY)) - y)).toBeLessThan(2)
+    expect(Math.abs((await target.evaluate((n) => n.getBoundingClientRect().top)) - top)).toBeLessThan(2)
+  })
+})
+
+test.describe('keyboard', () => {
+  test.beforeEach(async ({ page }) => {
+    await useFakeKey(page)
+  })
+
+  test('the viewer, menu and dialogs return focus to what opened them', async ({ page }) => {
+    const id = await seed(page)
+    await openTrip(page, id)
+
+    const opener = photoButtons(page).nth(1)
+    await opener.focus()
+    await page.keyboard.press('Enter')
+    await expect(viewer(page)).toBeVisible()
+    await page.keyboard.press('ArrowRight')
+    await expect(viewer(page).getByText('第 3 張，共 4 張')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(viewer(page)).toBeHidden()
+    await expect(opener).toBeFocused()
+
+    const more = page.getByRole('button', { name: '更多選項' })
+    await more.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('dialog', { name: '這篇回憶' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: '這篇回憶' })).toBeHidden()
+    await expect(more).toBeFocused()
+
+    const edit = page.getByRole('button', { name: '修改名稱' })
+    await edit.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByLabel('這趟的名字')).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(edit).toBeFocused()
+    expect(await overlayLevel(page)).toBe(0)
+  })
 })

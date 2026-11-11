@@ -227,3 +227,196 @@ test('orientation is applied by hand when the browser does not rotate', async ({
   expect(r.top[0]).toBeGreaterThan(200)
   expect(r.bottom[2]).toBeGreaterThan(200)
 })
+
+test('a real video, even renamed .jpg, is refused as not a photo before decoding', async ({ page }) => {
+  await open(page)
+
+  const r = await page.evaluate(async (STORAGE) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 64
+    canvas.height = 48
+    const ctx = canvas.getContext('2d')!
+    const type = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm'
+    const recorder = new MediaRecorder(canvas.captureStream(30), { mimeType: type })
+    const parts: Blob[] = []
+    recorder.ondataavailable = (e) => parts.push(e.data)
+
+    recorder.start()
+    for (let i = 0; i < 20; i++) {
+      ctx.fillStyle = `hsl(${i * 18}, 60%, 50%)`
+      ctx.fillRect(0, 0, 64, 48)
+      await new Promise((r) => setTimeout(r, 30))
+    }
+    await new Promise((r) => {
+      recorder.onstop = r
+      recorder.stop()
+    })
+
+    const video = new Blob(parts, { type })
+    const head = Array.from(new Uint8Array(await video.slice(0, 12).arrayBuffer()))
+
+    const storage = await import(STORAGE)
+    const trip = await storage.createTrip({ title: 'v' })
+    const result = await storage.addPhotos(trip.id, [
+      new File([video], 'clip.mp4', { type }),
+      new File([video], 'clip.jpg', { type: 'image/jpeg' }),
+    ])
+
+    return { type, head, failed: result.failed, added: result.added.length }
+  }, STORAGE)
+
+  expect(r.head.length).toBe(12)
+  expect(r.added).toBe(0)
+  expect(r.failed).toEqual([
+    { fileName: 'clip.mp4', reason: '這不是照片檔' },
+    { fileName: 'clip.jpg', reason: '這不是照片檔' },
+  ])
+})
+
+test('reloading in the middle of addPhotos leaves no unhandled rejection behind', async ({ page, browserName }) => {
+  await open(page)
+  const problems: string[] = []
+  page.on('pageerror', (e) => problems.push(e.message))
+
+  await page.evaluate(async (STORAGE) => {
+    const storage = await import(STORAGE)
+    const trip = await storage.createTrip({ title: 'u' })
+    const files: File[] = []
+
+    for (let i = 0; i < 6; i++) {
+      const canvas = document.createElement('canvas')
+      canvas.width = 3000
+      canvas.height = 2000
+      const ctx = canvas.getContext('2d')!
+      ctx.fillStyle = `hsl(${i * 50}, 50%, 50%)`
+      ctx.fillRect(0, 0, 3000, 2000)
+      files.push(await new Promise<File>((r) => canvas.toBlob((b) => r(new File([b!], `p${i}.jpg`, { type: 'image/jpeg' })), 'image/jpeg', 0.95)))
+    }
+
+    storage.addPhotos(trip.id, files, (done: number) => console.log(`progress ${done}`))
+  }, STORAGE)
+
+  await page.waitForEvent('console', { predicate: (m) => m.text() === 'progress 1' })
+  await page.reload()
+  await page.waitForTimeout(1500)
+
+  // ponytail: WebKit itself reports the cancelled in-flight blob read as a page error even when the promise is handled (checked by catching it in place).
+  const webkitCancelledRead = /localhost:\d+\/[0-9a-f-]{36} due to access control checks\.$/
+  expect(problems.filter((p) => !(browserName === 'webkit' && webkitCancelledRead.test(p)))).toEqual([])
+})
+
+test('two tabs: a memory deleted in one tab cannot be written back or half-filled from the other', async ({ page, context }) => {
+  await open(page)
+  const other = await context.newPage()
+  await open(other)
+
+  const id = await page.evaluate(async (STORAGE) => {
+    const storage = await import(STORAGE)
+    const trip = await storage.createTrip({ title: '兩個分頁' })
+    return trip.id as string
+  }, STORAGE)
+
+  await other.evaluate(async ({ STORAGE, id }) => (await import(STORAGE)).deleteTrip(id), { STORAGE, id })
+
+  const r = await page.evaluate(
+    async ({ STORAGE, id }) => {
+      const storage = await import(STORAGE)
+      const blob = await (await fetch('/tests/fixtures/hehuan-0926-summit.jpg')).blob()
+      const message = (p: Promise<unknown>) => p.then(() => 'ok', (e: Error) => e.message)
+
+      return {
+        update: await message(storage.updateTrip(id, { diary: '寫回來' })),
+        photos: await message(storage.addPhotos(id, [new File([blob], 's.jpg', { type: 'image/jpeg' })])),
+        track: await message(storage.saveTrack(id, [{ lat: 24, lon: 121, ele: null, time: null }])),
+        trip: (await storage.getTrip(id)) ?? null,
+        left: (await storage.listPhotos(id)).length,
+        track2: await storage.getTrack(id),
+      }
+    },
+    { STORAGE, id },
+  )
+
+  expect(r).toEqual({ update: '找不到這篇回憶', photos: '找不到這篇回憶', track: '找不到這篇回憶', trip: null, left: 0, track2: null })
+})
+
+test('a newer database version opened in another tab is not blocked, and this tab is told to reload', async ({ page, context }) => {
+  await open(page)
+  await page.evaluate(async (STORAGE) => (await import(STORAGE)).createTrip({ title: '舊分頁' }), STORAGE)
+
+  const other = await context.newPage()
+  await other.goto('./')
+  const opened = await other.evaluate(
+    () =>
+      new Promise<string>((resolve) => {
+        const req = indexedDB.open('hiking-memories', 2)
+        req.onblocked = () => resolve('blocked')
+        req.onsuccess = () => {
+          req.result.close()
+          resolve('opened')
+        }
+        req.onerror = () => resolve('error')
+      }),
+  )
+
+  const message = await page.evaluate(async (STORAGE) => (await import(STORAGE)).listTrips().then(() => 'ok', (e: Error) => e.message), STORAGE)
+
+  expect(opened).toBe('opened')
+  expect(message).toBe('登山回憶已在另一個分頁更新，請重新整理這個頁面')
+})
+
+test('storage full: photo import, track save and zip import fail in Chinese and leave nothing half-saved', async ({ page }) => {
+  await open(page)
+
+  const r = await page.evaluate(async (STORAGE) => {
+    const storage = await import(STORAGE)
+    const message = (p: Promise<unknown>) => p.then(() => 'ok', (e: Error) => e.message)
+    const photo = async (fixture: string, name: string) =>
+      new File([await (await fetch(`/tests/fixtures/${fixture}`)).blob()], name, { type: 'image/jpeg' })
+
+    const trip = await storage.createTrip({ title: '滿了' })
+    await storage.addPhotos(trip.id, [await photo('hehuan-0926-summit.jpg', 'small.jpg')])
+    const zip = await storage.exportTrip(trip.id)
+    const before = JSON.stringify(await storage.getTrip(trip.id))
+
+    // ponytail: Chromium's Storage.overrideQuotaForOrigin has no effect in Playwright contexts (tried incognito and persistent), so the full disk is simulated by the store refusing writes to one object store.
+    const refuse = (store: string) => {
+      for (const method of ['add', 'put'] as const) {
+        const original = IDBObjectStore.prototype[method]
+        IDBObjectStore.prototype[method] = function (this: IDBObjectStore, ...args: [unknown, IDBValidKey?]) {
+          if (this.name === store) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+          return original.apply(this, args)
+        } as never
+        restore.push(() => (IDBObjectStore.prototype[method] = original))
+      }
+    }
+    const restore: (() => void)[] = []
+    const lift = () => restore.splice(0).forEach((f) => f())
+
+    refuse('blobs')
+    const photoFull = await message(storage.addPhotos(trip.id, [await photo('hehuan-0720-gps.jpg', 'second.jpg')]))
+    lift()
+
+    refuse('tracks')
+    const trackFull = await message(storage.saveTrack(trip.id, [{ lat: 24, lon: 121, ele: null, time: null }]))
+    lift()
+
+    const tripsBefore = (await storage.listTrips()).length
+    refuse('blobs')
+    const importFull = await message(storage.importTrip(zip))
+    lift()
+
+    return {
+      photoFull,
+      trackFull,
+      importFull,
+      photos: (await storage.listPhotos(trip.id)).map((p: { fileName: string }) => p.fileName),
+      track: await storage.getTrack(trip.id),
+      same: JSON.stringify(await storage.getTrip(trip.id)) === before,
+      tripsAdded: (await storage.listTrips()).length - tripsBefore,
+      stillWorks: await message(storage.addPhotos(trip.id, [await photo('hehuan-0850-gps.jpg', 'third.jpg')])),
+    }
+  }, STORAGE)
+
+  const full = '裝置的儲存空間不足，請刪除一些照片或回憶後再試'
+  expect(r).toEqual({ photoFull: full, trackFull: full, importFull: full, photos: ['small.jpg'], track: null, same: true, tripsAdded: 0, stillWorks: 'ok' })
+})

@@ -112,6 +112,17 @@ describe('parseGpx', () => {
     }
   })
 
+  test('KML, KMZ, TCX and FIT files get a message that names them', () => {
+    const asks = (kind: string) => new Error(`這是 ${kind} 檔，請從登山 App 匯出 GPX 檔`)
+    const fitHeader = String.fromCharCode(14, 0x20, 0x35, 0x08, 0xa1, 0x9f, 0x01, 0x00) + '.FIT' + '\ufffd\ufffd'
+
+    expect(() => parseGpx('<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document/></kml>')).toThrow(asks('KML'))
+    expect(() => parseGpx('<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"/>')).toThrow(asks('TCX'))
+    expect(() => parseGpx('PK\u0003\u0004\u0014\u0000\u0000\u0000\u0008\u0000doc.kml\ufffd')).toThrow(asks('KMZ'))
+    expect(() => parseGpx('PK\u0003\u0004\u0014\u0000\u0000\u0000\u0008\u0000photo.jpg')).toThrow(new Error('這個檔案不是有效的 GPX'))
+    expect(() => parseGpx(fitHeader)).toThrow(asks('FIT'))
+  })
+
   test('fixture with times', () => {
     const parsed = parseGpx(fixture('hehuan-north.gpx'))
 

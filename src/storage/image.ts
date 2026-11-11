@@ -14,7 +14,10 @@ function browserAppliesOrientation(): Promise<boolean> {
     const rotated = bitmap.height > bitmap.width
     bitmap.close()
     return rotated
-  })()
+  })().catch((e: unknown) => {
+    autoRotates = undefined
+    throw e
+  })
 
   return autoRotates
 }

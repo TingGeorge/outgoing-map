@@ -10,7 +10,7 @@ test('parseGpx works with the browser DOMParser', async ({ page }) => {
     async ({ xml, path }) => {
       const core = await import(path)
       const { name, points } = core.parseGpx('\uFEFF' + xml)
-      const errors = ['not xml <<', xml.slice(0, 2000)].map((bad) => {
+      const errors = ['not xml <<', xml.slice(0, 2000), '<kml xmlns="http://www.opengis.net/kml/2.2"><Document/></kml>'].map((bad) => {
         try {
           core.parseGpx(bad)
           return 'parsed'
@@ -28,5 +28,5 @@ test('parseGpx works with the browser DOMParser', async ({ page }) => {
   expect(parsed.count).toBe(101)
   expect(parsed.first).toEqual({ lat: 24.1674, lon: 121.28879, ele: 2995, time: Date.UTC(2026, 10, 6, 22, 40) })
   expect(parsed.last).toEqual({ lat: 24.1674, lon: 121.288891, ele: 2994, time: Date.UTC(2026, 10, 7, 3, 40) })
-  expect(parsed.errors).toEqual(['這個檔案不是有效的 GPX', '這個檔案不是有效的 GPX'])
+  expect(parsed.errors).toEqual(['這個檔案不是有效的 GPX', '這個檔案不是有效的 GPX', '這是 KML 檔，請從登山 App 匯出 GPX 檔'])
 })

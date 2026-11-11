@@ -1,7 +1,7 @@
 import exifr from 'exifr'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildRoute, exifTimeToEpoch, parseGpx } from '../../core'
-import { goBack, navigate } from '../../router'
+import { goBack, guardBack, navigate } from '../../router'
 import { addPhotos, createTrip, deleteTrip, getTrip, listPhotos, saveTrack } from '../../storage'
 import { PHOTO_TIME_TOLERANCE_MS, type Id, type PhotoImportFailure, type TrackPoint } from '../../types'
 import {
@@ -21,6 +21,7 @@ import {
   Spinner,
   TextField,
   formatDate,
+  formatDateRange,
   formatKm,
   formatTime,
 } from '../../ui'
@@ -53,7 +54,22 @@ type Phase =
 
 const fileKey = (f: File) => `${f.name}|${f.size}|${f.lastModified}`
 
-const dayOf = (ms: number) => formatDate(ms).split('　')[0]
+const TITLE_MAX = 80
+
+const dayOf = (ms: number) => formatDate(ms).split('　')[0]!
+
+const clip = (text: string) => text.slice(0, TITLE_MAX).replace(/[\uD800-\uDBFF]$/, '')
+
+function dayName(startMs: number, endMs: number | null): string {
+  if (endMs === null || dayOf(endMs) === dayOf(startMs)) return dayOf(startMs)
+
+  const [, m1, d1] = /(\d+) 月 (\d+) 日/.exec(dayOf(startMs)) ?? []
+  const [, m2, d2] = /(\d+) 月 (\d+) 日/.exec(dayOf(endMs)) ?? []
+
+  return m1 === m2 ? `${m1} 月 ${d1}–${d2} 日` : `${dayOf(startMs)} – ${dayOf(endMs)}`
+}
+
+const spansDays = (g: GpxPick) => g.startAt !== null && g.endAt !== null && dayOf(g.startAt) !== dayOf(g.endAt)
 
 // ponytail: reads EXIF of at most 60 picked files just to suggest a title; a bigger batch only uses the first 60.
 async function earliestPhotoTime(files: File[]): Promise<number | null> {
@@ -178,8 +194,9 @@ export function NewTripScreen() {
   }, [photos])
 
   const suggested = useMemo(() => {
-    if (gpx?.name?.trim()) return gpx.name.trim()
-    return `${dayOf(gpx?.startAt ?? photoDay ?? today)}的山`
+    if (gpx?.name?.trim()) return clip(gpx.name.trim())
+    if (gpx?.startAt != null) return `${dayName(gpx.startAt, gpx.endAt)}的山`
+    return `${dayOf(photoDay ?? today)}的山`
   }, [gpx, photoDay, today])
 
   const shownTitle = titleEdited ? title : suggested
@@ -221,45 +238,35 @@ export function NewTripScreen() {
     })
   }
 
-  const [armed, setArmed] = useState(0)
   const guarded = dirty || saving
   const savingNow = useRef(saving)
   savingNow.current = saving
+  const release = useRef<(then?: () => void) => void>(() => {})
 
   useEffect(() => {
     if (!guarded) return
 
-    history.pushState({ ...history.state, leaveGuard: true }, '')
+    const off = guardBack(() => {
+      if (!savingNow.current) setLeaving(true)
+    })
+    release.current = off
 
-    const onPop = () => {
-      if (savingNow.current) setArmed((n) => n + 1)
-      else setLeaving(true)
-    }
-
-    addEventListener('popstate', onPop)
-
-    return () => {
-      removeEventListener('popstate', onPop)
-      if (history.state?.leaveGuard) history.back()
-    }
-  }, [guarded, armed])
+    return () => off()
+  }, [guarded])
 
   const back = () => {
     if (dirty) history.back()
     else goBack({ name: 'home' })
   }
 
-  const stay = () => {
-    setLeaving(false)
-    setArmed((n) => n + 1)
-  }
+  const stay = () => setLeaving(false)
 
   const create = async () => {
     if (busy.current) return
     busy.current = true
     setFormError(null)
 
-    const finalTitle = shownTitle.trim() || suggested
+    const finalTitle = clip(shownTitle.trim()) || suggested
     let tripId: Id | null = null
 
     const rollback = async (message: string, failed: PhotoImportFailure[] = []) => {
@@ -412,10 +419,19 @@ export function NewTripScreen() {
             <ul className={s.facts}>
               <li>{gpx.points.length} 個定位點</li>
               {gpx.startAt !== null && (
-                <li>
-                  {formatDate(gpx.startAt, true)}
-                  {gpx.endAt !== null && `，${formatTime(gpx.startAt)} 到 ${formatTime(gpx.endAt)}`}
-                </li>
+                spansDays(gpx) ? (
+                  <>
+                    <li>{formatDateRange(gpx.startAt, gpx.endAt, true)}</li>
+                    <li>
+                      {formatTime(gpx.startAt)} 出發，{formatTime(gpx.endAt!)} 結束
+                    </li>
+                  </>
+                ) : (
+                  <li>
+                    {formatDate(gpx.startAt, true)}
+                    {gpx.endAt !== null && `，${formatTime(gpx.startAt)} 到 ${formatTime(gpx.endAt)}`}
+                  </li>
+                )
               )}
               <li>{gpx.distanceM > 0 ? `${formatKm(gpx.distanceM)} 公里` : '路線長度為 0'}</li>
               {gpx.startAt === null && <li>這個檔案沒有時間，照片只能靠自己的位置放上路線</li>}
@@ -471,7 +487,14 @@ export function NewTripScreen() {
       </section>
 
       <section className={s.section}>
-        <TextField label="這趟的名字" value={shownTitle} onChange={editTitle} maxLength={60} enterKeyHint="done" />
+        <TextField
+          label="這趟的名字"
+          value={shownTitle}
+          onChange={editTitle}
+          maxLength={TITLE_MAX}
+          enterKeyHint="done"
+          hint={shownTitle.length >= TITLE_MAX - 20 ? `${shownTitle.length} / ${TITLE_MAX}` : undefined}
+        />
         {!ready && <p className={s.hint}>至少選一個 GPX 檔或一張照片，才能建立。</p>}
       </section>
 
@@ -483,7 +506,7 @@ export function NewTripScreen() {
         confirmLabel="離開"
         cancelLabel="留下來"
         onCancel={stay}
-        onConfirm={() => goBack({ name: 'home' })}
+        onConfirm={() => release.current(() => goBack({ name: 'home' }))}
       />
     </Screen>
   )

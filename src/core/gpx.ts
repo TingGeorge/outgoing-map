@@ -4,10 +4,19 @@ import type { EpochMs, ParsedGpx, TrackPoint } from '../types'
 const INVALID_GPX = '這個檔案不是有效的 GPX'
 const NO_POINTS = 'GPX 裡沒有任何定位點'
 
+const otherFormat = (kind: string) => new Error(`這是 ${kind} 檔，請從登山 App 匯出 GPX 檔`)
+
+const OTHER_ROOTS: Record<string, string> = { kml: 'KML', TrainingCenterDatabase: 'TCX' }
+
 export function parseGpx(xml: string): ParsedGpx {
+  if (xml.slice(0, 16).includes('.FIT')) throw otherFormat('FIT')
+  if (xml.startsWith('PK\u0003\u0004')) throw /\.kml/i.test(xml.slice(0, 512)) ? otherFormat('KMZ') : new Error(INVALID_GPX)
+
   const doc = new DOMParser().parseFromString(xml.replace(/^\uFEFF/, ''), 'application/xml')
   const root = doc.documentElement
+  const other = root && doc.getElementsByTagName('parsererror').length === 0 && OTHER_ROOTS[root.localName]
 
+  if (other) throw otherFormat(other)
   if (!root || root.localName !== 'gpx' || doc.getElementsByTagName('parsererror').length > 0) {
     throw new Error(INVALID_GPX)
   }
