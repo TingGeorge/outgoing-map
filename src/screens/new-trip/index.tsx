@@ -1,5 +1,5 @@
 import exifr from 'exifr'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { buildRoute, exifTimeToEpoch, parseGpx } from '../../core'
 import { goBack, guardBack, navigate } from '../../router'
 import { addPhotos, createTrip, deleteTrip, getTrip, listPhotos, saveTrack } from '../../storage'
@@ -243,7 +243,7 @@ export function NewTripScreen() {
   savingNow.current = saving
   const release = useRef<(then?: () => void) => void>(() => {})
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!guarded) return
 
     const off = guardBack(() => {
