@@ -38,6 +38,7 @@ export function Screen({ children, bottom, bleed = false, className }: ScreenPro
 export interface ButtonProps {
   children: ReactNode
   variant?: 'primary' | 'ghost' | 'dark'
+  inline?: boolean
   icon?: ReactNode
   iconEnd?: ReactNode
   block?: boolean
@@ -51,6 +52,7 @@ export interface ButtonProps {
 export function Button({
   children,
   variant = 'primary',
+  inline = false,
   icon,
   iconEnd,
   block = false,
@@ -60,7 +62,7 @@ export function Button({
   type = 'button',
   disabled = false,
 }: ButtonProps) {
-  const className = cx(s.button, s[variant], block && s.block)
+  const className = cx(s.button, s[variant], inline && s.inline, block && s.block)
   const body = (
     <>
       {icon}
@@ -305,6 +307,13 @@ interface ModalProps {
   children: ReactNode
 }
 
+let keyboardUser = false
+
+if (typeof window !== 'undefined') {
+  addEventListener('keydown', () => (keyboardUser = true), true)
+  addEventListener('pointerdown', () => (keyboardUser = false), true)
+}
+
 function Modal({ open, onClose, kind, labelledBy, label, children }: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null)
   const pressedOnBackdrop = useRef(false)
@@ -316,6 +325,9 @@ function Modal({ open, onClose, kind, labelledBy, label, children }: ModalProps)
     if (open && !dialog.open) {
       opener.current = document.activeElement as HTMLElement | null
       dialog.showModal()
+
+      const focused = document.activeElement
+      if (!keyboardUser && !(focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement)) dialog.focus()
     }
     if (!open && dialog.open) {
       dialog.close()
@@ -335,6 +347,7 @@ function Modal({ open, onClose, kind, labelledBy, label, children }: ModalProps)
   return (
     <dialog
       ref={ref}
+      tabIndex={-1}
       className={cx(s.modal, s[kind])}
       aria-labelledby={labelledBy}
       aria-label={labelledBy ? undefined : label}
@@ -478,7 +491,10 @@ export function ActionRow({ icon, label, hint, danger = false, onClick, href, di
     <>
       {icon && <span className={s.rowIcon}>{icon}</span>}
       <span className={s.rowText}>
-        <span className={s.rowLabel}>{label}</span>
+        <span className={s.rowLabel}>
+          {label}
+          {danger && <WarningIcon size={18} />}
+        </span>
         {hint && <span className={s.rowHint}>{hint}</span>}
       </span>
     </>
@@ -527,9 +543,18 @@ export function Notice({ tone, title, children, action }: NoticeProps) {
 
 export function Toaster() {
   const items = useSyncExternalStore(subscribeToasts, getToasts)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const layer = ref.current
+    if (!layer?.showPopover || items.length === 0) return
+
+    if (layer.matches(':popover-open')) layer.hidePopover()
+    layer.showPopover()
+  }, [items])
 
   return (
-    <div className={s.toaster} aria-live="polite">
+    <div ref={ref} popover="manual" className={s.toaster} aria-live="polite">
       {items.map((t) => {
         const Icon = toneIcon[t.tone]
 
@@ -562,10 +587,14 @@ export interface ProgressBarProps {
 }
 
 export function ProgressBar({ value, max, label }: ProgressBarProps) {
+  const fraction = max > 0 ? Math.min(Math.max(value / max, 0), 1) : 0
+
   return (
     <div className={s.progressWrap}>
       <span className={s.progressLabel}>{label}</span>
-      <progress className={s.progress} value={value} max={max} aria-label={label} />
+      <div className={s.progress} role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={max} aria-valuenow={value}>
+        <div className={s.progressFill} style={{ transform: `translateX(${(fraction - 1) * 100}%)` }} />
+      </div>
     </div>
   )
 }
@@ -594,17 +623,18 @@ export interface FilePickerProps {
   onFiles: (files: File[]) => void
   children: ReactNode
   variant?: ButtonProps['variant']
+  inline?: boolean
   icon?: ReactNode
   block?: boolean
   disabled?: boolean
 }
 
-export function FilePicker({ accept, multiple, onFiles, children, variant, icon, block, disabled }: FilePickerProps) {
+export function FilePicker({ accept, multiple, onFiles, children, variant, inline, icon, block, disabled }: FilePickerProps) {
   const input = useRef<HTMLInputElement>(null)
 
   return (
     <>
-      <Button variant={variant} icon={icon} block={block} disabled={disabled} onClick={() => input.current?.click()}>
+      <Button variant={variant} inline={inline} icon={icon} block={block} disabled={disabled} onClick={() => input.current?.click()}>
         {children}
       </Button>
       <input

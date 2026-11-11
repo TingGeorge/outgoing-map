@@ -58,11 +58,11 @@ describe('trips', () => {
   })
 
   test('unknown ids reject with a clear message', async () => {
-    await expect(storage.updateTrip('nope', { title: 'x' })).rejects.toThrow('找不到這趟行程')
+    await expect(storage.updateTrip('nope', { title: 'x' })).rejects.toThrow('找不到這篇回憶')
     await expect(storage.updatePhoto('nope', { caption: 'x' })).rejects.toThrow('找不到這張照片')
-    await expect(storage.saveTrack('nope', track)).rejects.toThrow('找不到這趟行程')
-    await expect(storage.addPhotos('nope', [])).rejects.toThrow('找不到這趟行程')
-    await expect(storage.exportTrip('nope')).rejects.toThrow('找不到這趟行程')
+    await expect(storage.saveTrack('nope', track)).rejects.toThrow('找不到這篇回憶')
+    await expect(storage.addPhotos('nope', [])).rejects.toThrow('找不到這篇回憶')
+    await expect(storage.exportTrip('nope')).rejects.toThrow('找不到這篇回憶')
     expect(await storage.getTrip('nope')).toBeUndefined()
     expect(await storage.getTrack('nope')).toBeNull()
   })
@@ -72,7 +72,7 @@ describe('trips', () => {
     const b = await storage.createTrip({ title: 'b' })
     const { added } = await storage.addPhotos(a.id, [jpeg(PHOTOS[0]!)])
 
-    await expect(storage.updateTrip(b.id, { coverPhotoId: added[0]!.id })).rejects.toThrow('封面照片不在這趟行程裡')
+    await expect(storage.updateTrip(b.id, { coverPhotoId: added[0]!.id })).rejects.toThrow('封面照片不在這篇回憶裡')
   })
 
   test('listTrips puts the newest trip first, by trip date then createdAt', async () => {
@@ -338,8 +338,8 @@ describe('export and import', () => {
     const base = { format: 'hiking-memories-trip', version: 1, exportedAt: 0, track: null }
     const trip = { title: 't', diary: '' }
 
-    await expect(storage.importTrip(new Blob(['hello']))).rejects.toThrow('這個檔案不是登山回憶的行程匯出檔')
-    await expect(storage.importTrip(new Blob([zipSync({ 'a.txt': strToU8('x') })]))).rejects.toThrow('不是登山回憶的行程匯出檔')
+    await expect(storage.importTrip(new Blob(['hello']))).rejects.toThrow('這個檔案不是登山回憶的匯出檔')
+    await expect(storage.importTrip(new Blob([zipSync({ 'a.txt': strToU8('x') })]))).rejects.toThrow('不是登山回憶的匯出檔')
     await expect(storage.importTrip(new Blob([zipSync({ 'manifest.json': strToU8('{') })]))).rejects.toThrow('不是登山回憶')
     await expect(
       storage.importTrip(new Blob([zipSync({ 'manifest.json': manifest({ ...base, version: 99, trip, photos: [] }) })])),

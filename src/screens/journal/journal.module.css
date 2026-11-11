@@ -14,11 +14,6 @@
   --overlap: 0px;
 }
 
-.hero .map {
-  position: absolute;
-  inset: 0;
-}
-
 .map:focus-visible,
 .map :global(.maplibregl-canvas):focus-visible {
   outline: 3px solid var(--color-accent);
@@ -773,7 +768,6 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  margin: 0 -12px;
 }
 
 .viewerMessage {

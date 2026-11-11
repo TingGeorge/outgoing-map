@@ -5,12 +5,12 @@ export type MapStyle = Exclude<MapOptions['style'], string | undefined>
 export type MapLayer = MapStyle['layers'][number]
 
 export const THUNDERFOREST_ATTRIBUTION =
-  'Maps © <a href="https://www.thunderforest.com/">Thunderforest</a>, Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+  'Maps © <a target="_blank" rel="noopener" href="https://www.thunderforest.com/">Thunderforest</a>, Data © <a target="_blank" rel="noopener" href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
 
-export const NLSC_ATTRIBUTION = '<a href="https://maps.nlsc.gov.tw/">內政部國土測繪中心</a>'
+export const NLSC_ATTRIBUTION = '<a target="_blank" rel="noopener" href="https://maps.nlsc.gov.tw/">內政部國土測繪中心</a>'
 
 export const TERRAIN_ATTRIBUTION =
-  'Terrain: <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md">Mapzen</a>, U.S. Geological Survey (SRTM, GMTED2010), NOAA (ETOPO1)'
+  '地形 <a target="_blank" rel="noopener" href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md">Mapzen</a>, U.S. Geological Survey (SRTM, GMTED2010), NOAA (ETOPO1)'
 
 export const NLSC_PHOTO_TILES = 'https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}'
 
@@ -21,6 +21,8 @@ export const TERRAIN_SOURCE_ID = 'terrain'
 export const TERRAIN_EXAGGERATION = 1.2
 
 export const ROUTE_COLOR = '#B84A22'
+
+export const FLYOVER_HAZE = '#B9C4B0'
 
 export function thunderforestTiles(key: string): string {
   return `https://tile.thunderforest.com/outdoors/{z}/{x}/{y}@2x.png?apikey=${encodeURIComponent(key)}`
@@ -72,7 +74,7 @@ export function flyoverStyle(): MapStyle {
       'fog-color': '#EEF1E2',
     },
     layers: [
-      { id: 'background', type: 'background', paint: { 'background-color': '#1C2A22' } },
+      { id: 'background', type: 'background', paint: { 'background-color': FLYOVER_HAZE } },
       { id: 'photo', type: 'raster', source: 'photo' },
     ],
   }

@@ -1,13 +1,42 @@
-import { useEffect } from 'react'
+import { Component, Suspense, lazy, useEffect, type ReactNode } from 'react'
 import { getKey } from './key'
 import { navigate, useRoute } from './router'
-import { FlyoverScreen } from './screens/flyover'
 import { HomeScreen } from './screens/home'
-import { JournalScreen } from './screens/journal'
-import { NewTripScreen } from './screens/new-trip'
-import { SettingsScreen } from './screens/settings'
 import { WelcomeScreen } from './screens/welcome'
-import { Toaster } from './ui'
+import { Button, EmptyState, Ridge, Screen, Spinner, Toaster } from './ui'
+
+const NewTripScreen = lazy(() => import('./screens/new-trip').then((m) => ({ default: m.NewTripScreen })))
+const JournalScreen = lazy(() => import('./screens/journal').then((m) => ({ default: m.JournalScreen })))
+const FlyoverScreen = lazy(() => import('./screens/flyover').then((m) => ({ default: m.FlyoverScreen })))
+const SettingsScreen = lazy(() => import('./screens/settings').then((m) => ({ default: m.SettingsScreen })))
+
+function Loading() {
+  return (
+    <Screen className="screen-loading">
+      <Spinner label="載入中" />
+    </Screen>
+  )
+}
+
+class ScreenError extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children
+
+    return (
+      <Screen>
+        <EmptyState art={<Ridge variant="banner" />} title="這個畫面沒有打開" action={<Button onClick={() => location.reload()}>重新載入</Button>}>
+          可能是網路斷了，或登山回憶剛好更新。連上網路後重新載入就好，你的回憶都還在這台裝置裡。
+        </EmptyState>
+      </Screen>
+    )
+  }
+}
 
 function Routes() {
   const route = useRoute()
@@ -45,9 +74,15 @@ function Routes() {
 }
 
 export function App() {
+  const route = useRoute()
+
   return (
     <>
-      <Routes />
+      <ScreenError key={route.name}>
+        <Suspense fallback={<Loading />}>
+          <Routes />
+        </Suspense>
+      </ScreenError>
       <Toaster />
     </>
   )

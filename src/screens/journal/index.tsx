@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { buildRoute, buildTimeline, distanceM, elevationProfile } from '../../core'
 import { poisAlongRoute } from '../../poi'
-import { href } from '../../router'
+import { goBack, href } from '../../router'
 import { getTrack, getTrip, listPhotos, updateTrip } from '../../storage'
 import type { ElevationProfile, Photo, PoiOnRoute, Route, Trip } from '../../types'
 import {
@@ -68,7 +68,7 @@ function useBackToClose(open: boolean, close: () => void) {
   useEffect(() => {
     if (!open) return
 
-    history.pushState({ journalOverlay: true }, '')
+    history.pushState({ ...history.state, journalOverlay: true }, '')
     const onPop = () => latest.current()
     addEventListener('popstate', onPop)
 
@@ -105,10 +105,10 @@ export function JournalScreen({ tripId }: JournalScreenProps) {
       <Screen>
         <EmptyState
           art={<Ridge variant="banner" />}
-          title="找不到這趟行程"
+          title="找不到這篇回憶"
           action={
             <Button variant="dark" href={href({ name: 'home' })} icon={<BackIcon size={20} />}>
-              回到首頁
+              回首頁
             </Button>
           }
         >
@@ -121,7 +121,7 @@ export function JournalScreen({ tripId }: JournalScreenProps) {
   if (state.status === 'error') {
     return (
       <Screen>
-        <IconButton label="回首頁" href={href({ name: 'home' })}>
+        <IconButton label="回首頁" onClick={() => goBack({ name: 'home' })}>
           <BackIcon />
         </IconButton>
         <Notice
@@ -193,7 +193,7 @@ function Journal({ data, reload }: { data: Data; reload: () => Promise<void> }) 
 
   const controls = (
     <>
-      <IconButton label="回首頁" href={href({ name: 'home' })}>
+      <IconButton label="回首頁" onClick={() => goBack({ name: 'home' })}>
         <BackIcon />
       </IconButton>
       <span className={s.controlsEnd}>
@@ -252,8 +252,8 @@ function Journal({ data, reload }: { data: Data; reload: () => Promise<void> }) 
             }
           >
             {photos.length > 0
-              ? '照片裡沒有位置資訊，所以畫不出路線。匯入當天的 GPX 軌跡，路線和照片就會出現在地圖上。'
-              : '匯入當天的 GPX 軌跡，或加入有位置資訊的照片，路線就會出現在地圖上。'}
+              ? '照片裡沒有位置資訊，所以畫不出路線。匯入當天的 GPX 檔，路線和照片就會出現在地圖上。'
+              : '匯入當天的 GPX 檔，或加入有位置資訊的照片，路線就會出現在地圖上。'}
           </Notice>
         )}
 
@@ -289,16 +289,16 @@ function Journal({ data, reload }: { data: Data; reload: () => Promise<void> }) 
         <Diary tripId={trip.id} initial={trip.diary} />
       </div>
 
-      <Sheet open={menu} onClose={() => setMenu(false)} title="這趟行程">
+      <Sheet open={menu} onClose={() => setMenu(false)} title="這篇回憶">
         <ActionRow icon={<PhotoIcon />} label="加入照片" hint="同一張照片不會重複加入" onClick={menuAction(actions.pickPhotos)} />
         <ActionRow
           icon={<RouteIcon />}
           label={trip.hasTrack ? '更換 GPX' : '匯入 GPX'}
-          hint={trip.hasTrack ? '用另一個軌跡檔取代現在的路線' : '加入當天的軌跡，照片會依時間放上路線'}
+          hint={trip.hasTrack ? '用另一個 GPX 檔取代現在的路線' : '加入當天的 GPX 檔，照片會依時間放上路線'}
           onClick={menuAction(actions.pickGpx)}
         />
-        <ActionRow icon={<DownloadIcon />} label="匯出這趟行程" hint="打包成一個檔案，可以備份或換手機" onClick={menuAction(actions.startExport)} />
-        <ActionRow icon={<TrashIcon />} label="刪除這趟行程" danger onClick={menuAction(actions.askDelete)} />
+        <ActionRow icon={<DownloadIcon />} label="匯出這篇回憶" hint="打包成一個檔案，可以備份或換手機" onClick={menuAction(actions.startExport)} />
+        <ActionRow icon={<TrashIcon />} label="刪除這篇回憶" danger onClick={menuAction(actions.askDelete)} />
       </Sheet>
 
       <TitleDialog open={editTitle} trip={trip} onClose={() => setEditTitle(false)} reload={reload} />
@@ -334,7 +334,7 @@ function TitleDialog({ open, trip, onClose, reload }: { open: boolean; trip: Tri
 
   const save = async () => {
     const title = value.trim()
-    if (!title) return setError('請幫這趟行程取個名字')
+    if (!title) return setError('請幫這篇回憶取個名字')
 
     setBusy(true)
 
@@ -371,7 +371,7 @@ function TitleDialog({ open, trip, onClose, reload }: { open: boolean; trip: Tri
           void save()
         }}
       >
-        <TextField label="行程名稱" value={value} onChange={setValue} error={error || undefined} maxLength={60} autoFocus enterKeyHint="done" />
+        <TextField label="這趟的名字" value={value} onChange={setValue} error={error || undefined} maxLength={60} autoFocus enterKeyHint="done" />
       </form>
     </Dialog>
   )

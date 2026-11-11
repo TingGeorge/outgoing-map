@@ -156,7 +156,7 @@ function FirstRun() {
           <span className={s.num} aria-hidden="true">
             1
           </span>
-          <span>爬山時，用自己的 App 錄軌跡、用手機或相機拍照。</span>
+          <span>爬山時，用自己的登山 App 記錄路線、用手機或相機拍照。</span>
         </li>
         <li>
           <span className={s.num} aria-hidden="true">

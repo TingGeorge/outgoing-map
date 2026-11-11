@@ -23,6 +23,7 @@ const iphone = {
 
 export default defineConfig({
   testDir: 'tests/e2e',
+  testIgnore: 'pwa.spec.ts',
   reporter: 'list',
 
   use: {

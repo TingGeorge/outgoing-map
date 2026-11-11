@@ -34,12 +34,34 @@ export function href(route: Exclude<AppRoute, { name: 'not-found' }>): string {
   }
 }
 
+let depth = typeof history.state?.depth === 'number' ? history.state.depth : 0
+let replacing = false
+
+history.replaceState({ ...history.state, depth }, '')
+
+addEventListener('hashchange', () => {
+  if (typeof history.state?.depth === 'number') {
+    depth = history.state.depth
+  } else {
+    if (!replacing) depth++
+    history.replaceState({ ...history.state, depth }, '')
+  }
+
+  replacing = false
+})
+
 export function navigate(route: Exclude<AppRoute, { name: 'not-found' }>, options: { replace?: boolean } = {}): void {
   if (options.replace) {
+    replacing = location.hash !== href(route)
     location.replace(href(route))
   } else {
     location.hash = href(route)
   }
+}
+
+export function goBack(fallback: Exclude<AppRoute, { name: 'not-found' }>): void {
+  if (depth > 0) history.back()
+  else navigate(fallback, { replace: true })
 }
 
 function subscribe(onChange: () => void) {

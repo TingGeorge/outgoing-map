@@ -229,7 +229,7 @@ export function WelcomeScreen() {
             小鑰匙打開
           </h1>
           <p className={s.body}>
-            登山地圖由 Thunderforest 提供。每個人都用自己的免費額度，所以要先去領一把自己的「金鑰」，就像地圖的小鑰匙。
+            登山地圖由 Thunderforest 提供。每個人都用自己的免費額度，所以要先去領一把自己的地圖鑰匙，也就是 API Key。
           </p>
           <p className={s.body}>只需要領一次，而且免費。個人看地圖用，免費額度通常很夠。</p>
         </div>
@@ -299,7 +299,7 @@ export function WelcomeScreen() {
 
         <div ref={input} className={s.titles}>
           <TextField
-            label="地圖金鑰（API Key）"
+            label="地圖鑰匙（API Key）"
             value={value}
             onChange={setValue}
             placeholder="一長串英文字母和數字"
@@ -317,7 +317,7 @@ export function WelcomeScreen() {
               </Button>
             )}
             {check === 'network-error' && (
-              <Button variant="ghost" onClick={retry}>
+              <Button variant="ghost" inline onClick={retry}>
                 再試一次
               </Button>
             )}
@@ -343,7 +343,7 @@ export function WelcomeScreen() {
     <Screen
       bottom={
         <div className={s.actions} style={{ width: '100%', paddingTop: 0 }}>
-          <Button block onClick={() => navigate({ name: 'home' })}>
+          <Button block onClick={() => navigate({ name: 'home' }, { replace: true })}>
             進入 App
           </Button>
         </div>

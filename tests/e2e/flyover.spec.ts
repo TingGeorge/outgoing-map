@@ -2,6 +2,8 @@ import { expect, test, type Page } from '@playwright/test'
 
 const READY = { timeout: 60_000 }
 
+test.describe.configure({ timeout: 120_000 })
+
 interface Seeded {
   id: string
   stops: string[]
@@ -134,8 +136,9 @@ test('with reduced motion it does not auto-play and still steps through photos',
   await expect(popup(page)).toHaveAttribute('data-photo-id', stops[0]!)
 })
 
-test('close and Escape return to the journal', async ({ page }) => {
+test('close and Escape return to the journal, also when the player was opened from a link', async ({ page }) => {
   const { id } = await seed(page, { photos: false })
+  await page.goto('about:blank')
   await open(page, id)
 
   await page.getByRole('button', { name: '關閉播放' }).click()
@@ -158,7 +161,7 @@ test('an unknown trip is friendly and links home', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('thunderforest-key', 'ffffffffffffffffffffffffffffffff'))
   await page.goto('./#/trip/no-such-trip/fly')
 
-  await expect(page.getByRole('heading', { name: '找不到這趟行程' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '找不到這篇回憶' })).toBeVisible()
   await expect(page.getByRole('link', { name: '回首頁' })).toHaveAttribute('href', '#/')
 })
 

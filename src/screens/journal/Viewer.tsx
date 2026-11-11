@@ -91,7 +91,7 @@ export function Viewer({ photos, photoId, tripId, coverId, onSelect, onClose, re
     try {
       await updateTrip(tripId, { coverPhotoId: photo.id })
       await reload()
-      setMessage('已設為這趟行程的封面')
+      setMessage('已設為這篇回憶的封面')
     } catch (e) {
       setMessage((e as Error).message)
     } finally {
@@ -176,10 +176,10 @@ export function Viewer({ photos, photoId, tripId, coverId, onSelect, onClose, re
         <Caption key={photo.id} photo={photo} reload={reload} />
 
         <div className={s.viewerActions}>
-          <Button variant="ghost" icon={isCover ? <CheckIcon size={20} /> : <PhotoIcon size={20} />} onClick={setCover} disabled={busy || isCover}>
+          <Button variant="ghost" inline icon={isCover ? <CheckIcon size={20} /> : <PhotoIcon size={20} />} onClick={setCover} disabled={busy || isCover}>
             {isCover ? '這是封面' : '設為封面'}
           </Button>
-          <Button variant="ghost" icon={<TrashIcon size={20} />} onClick={() => setConfirm(true)} disabled={busy}>
+          <Button variant="ghost" inline icon={<TrashIcon size={20} />} onClick={() => setConfirm(true)} disabled={busy}>
             刪除照片
           </Button>
         </div>
@@ -194,7 +194,7 @@ export function Viewer({ photos, photoId, tripId, coverId, onSelect, onClose, re
         danger
         busy={busy}
         title="刪除這張照片？"
-        message="照片和它的說明會從這趟行程刪除，無法復原。"
+        message="照片和它的說明會從這篇回憶刪除，無法復原。"
         confirmLabel="刪除"
         onConfirm={remove}
         onCancel={() => setConfirm(false)}

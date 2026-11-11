@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { parseGpx } from '../../core'
-import { navigate } from '../../router'
+import { goBack } from '../../router'
 import { PHOTO_FAILURE, addPhotos, deleteTrip, exportTrip, saveTrack } from '../../storage'
 import type { PhotoImportFailure, TrackPoint, Trip } from '../../types'
 import { Button, ConfirmDialog, Dialog, DownloadIcon, ProgressBar, ShareIcon, Spinner, toast } from '../../ui'
@@ -120,7 +120,7 @@ export function useTripActions(trip: Trip, reload: () => Promise<void>) {
     try {
       await deleteTrip(trip.id)
       toast(`已刪除「${trip.title}」`)
-      navigate({ name: 'home' }, { replace: true })
+      goBack({ name: 'home' })
     } catch (e) {
       setDeleting(null)
       toast((e as Error).message, { tone: 'error' })
@@ -168,7 +168,7 @@ export function useTripActions(trip: Trip, reload: () => Promise<void>) {
         open={gpx !== null}
         busy={gpxBusy}
         title="換成新的 GPX？"
-        message="原本的路線會被這個檔案取代，照片會依新的軌跡重新排列位置。"
+        message="原本的路線會被這個檔案取代，照片會依新的路線重新排列位置。"
         confirmLabel="換上新路線"
         onConfirm={() => gpx && void writeTrack(gpx.points)}
         onCancel={() => setGpx(null)}
@@ -177,7 +177,7 @@ export function useTripActions(trip: Trip, reload: () => Promise<void>) {
       <Dialog
         open={exporting !== null}
         onClose={() => exporting?.phase !== 'working' && setExporting(null)}
-        title="匯出這趟行程"
+        title="匯出這篇回憶"
         actions={
           exporting?.phase === 'ready' ? (
             <>
@@ -215,9 +215,9 @@ export function useTripActions(trip: Trip, reload: () => Promise<void>) {
         open={deleting !== null}
         danger
         busy={deleting === 'busy'}
-        title="刪除這趟行程？"
+        title="刪除這篇回憶？"
         message={`「${trip.title}」的路線、${trip.photoCount} 張照片和日記都會從這台裝置刪除，無法復原。需要的話，請先匯出備份。`}
-        confirmLabel="刪除行程"
+        confirmLabel="刪除回憶"
         onConfirm={() => void removeTrip()}
         onCancel={() => setDeleting(null)}
       />
@@ -237,7 +237,7 @@ function AddResult({ added, duplicates, failed }: { added: number; duplicates: n
   return (
     <div className={s.addResult}>
       <p>{added > 0 ? `加入了 ${added} 張照片。` : '這次沒有加入新的照片。'}</p>
-      {duplicates > 0 && <p>{duplicates} 張已經在這趟行程裡，沒有重複加入。</p>}
+      {duplicates > 0 && <p>{duplicates} 張已經在這篇回憶裡，沒有重複加入。</p>}
       {failed.length > 0 && (
         <>
           <p>{failed.length} 張沒有加入：</p>

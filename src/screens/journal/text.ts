@@ -16,7 +16,7 @@ export const POI_KIND: Record<PoiKind, string> = {
 }
 
 export const PLACEMENT: Record<PlacementSource, string> = {
-  track: '依時間放在軌跡上',
+  track: '依拍攝時間放上路線',
   exif: '照片自己的定位',
   none: '無法放到路線上',
 }

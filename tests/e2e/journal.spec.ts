@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { routePixels } from './helpers'
 
 const FAKE_KEY = 'ffffffffffffffffffffffffffffffff'
 const PHOTOS = ['hehuan-0720-gps.jpg', 'hehuan-0850-gps.jpg', 'hehuan-0926-summit.jpg', 'hehuan-1015-nogps.jpg']
@@ -64,26 +65,6 @@ const timelineRows = (page: Page) => page.locator('ol > li')
 
 async function noHorizontalScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false)
-}
-
-async function routePixels(page: Page) {
-  const png = await page.locator('section[aria-label="路線地圖"] canvas').screenshot()
-
-  return page.evaluate(async (b64) => {
-    const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob())
-    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
-    const ctx = canvas.getContext('2d')!
-    ctx.drawImage(bitmap, 0, 0)
-
-    const data = ctx.getImageData(0, 0, bitmap.width, bitmap.height).data
-    let count = 0
-
-    for (let i = 0; i < data.length; i += 4) {
-      if (Math.abs(data[i]! - 0xb8) < 24 && Math.abs(data[i + 1]! - 0x4a) < 24 && Math.abs(data[i + 2]! - 0x22) < 24) count++
-    }
-
-    return count
-  }, png.toString('base64'))
 }
 
 async function shot(page: Page, name: string, fullPage = false) {
@@ -158,13 +139,13 @@ test.describe('with a fake key', () => {
     await openTrip(page, id)
 
     await page.getByRole('button', { name: '修改名稱' }).click()
-    const field = page.getByLabel('行程名稱')
+    const field = page.getByLabel('這趟的名字')
     await expect(field).toHaveValue('合歡北峰')
     await shot(page, 'title-dialog')
 
     await field.fill('  ')
     await page.getByRole('button', { name: '儲存' }).click()
-    await expect(page.getByText('請幫這趟行程取個名字')).toBeVisible()
+    await expect(page.getByText('請幫這篇回憶取個名字')).toBeVisible()
 
     await field.fill('合歡北峰，看雲去')
     await page.getByRole('button', { name: '儲存' }).click()
@@ -186,7 +167,7 @@ test.describe('with a fake key', () => {
     await expect(page.getByLabel('日記')).toHaveValue('天氣比預報好很多。')
 
     await page.getByLabel('日記').fill('天氣比預報好很多。下次帶爸媽來。')
-    await page.getByRole('link', { name: '回首頁' }).click()
+    await page.getByRole('button', { name: '回首頁' }).click()
     await expect(page).toHaveURL(/#\/$/)
 
     await openTrip(page, id)
@@ -201,7 +182,7 @@ test.describe('with a fake key', () => {
     const viewer = page.getByRole('dialog', { name: '照片' })
     await expect(viewer).toBeVisible()
     await expect(viewer.getByText('第 1 張，共 4 張')).toBeVisible()
-    await expect(viewer.getByText('依時間放在軌跡上')).toBeVisible()
+    await expect(viewer.getByText('依拍攝時間放上路線')).toBeVisible()
     await expect(viewer.getByRole('img')).toBeVisible()
 
     await viewer.getByLabel('照片說明').fill('箭竹草原，風很大')
@@ -230,7 +211,7 @@ test.describe('with a fake key', () => {
     await photoButtons(page).nth(1).click()
     const viewer = page.getByRole('dialog', { name: '照片' })
     await viewer.getByRole('button', { name: '設為封面' }).click()
-    await expect(viewer.getByText('已設為這趟行程的封面')).toBeVisible()
+    await expect(viewer.getByText('已設為這篇回憶的封面')).toBeVisible()
     await expect(viewer.getByRole('button', { name: '這是封面' })).toBeDisabled()
 
     await viewer.getByRole('button', { name: '刪除照片' }).click()
@@ -259,7 +240,7 @@ test.describe('with a fake key', () => {
 
     const dialog = page.getByRole('dialog', { name: '加入照片' })
     await expect(dialog.getByText('加入了 1 張照片。')).toBeVisible({ timeout: 15_000 })
-    await expect(dialog.getByText('1 張已經在這趟行程裡')).toBeVisible()
+    await expect(dialog.getByText('1 張已經在這篇回憶裡')).toBeVisible()
     await expect(dialog.getByText('hehuan-north.gpx')).toBeVisible()
     await shot(page, 'add-result')
 
@@ -308,8 +289,8 @@ test.describe('with a fake key', () => {
     await openTrip(page, id)
 
     await page.getByRole('button', { name: '更多選項' }).click()
-    await page.getByRole('button', { name: '匯出這趟行程' }).click()
-    const dialog = page.getByRole('dialog', { name: '匯出這趟行程' })
+    await page.getByRole('button', { name: '匯出這篇回憶' }).click()
+    const dialog = page.getByRole('dialog', { name: '匯出這篇回憶' })
     await expect(dialog.getByText('合歡北峰-2026-11-07.hiking.zip')).toBeVisible()
     await shot(page, 'export-ready')
     await dialog.getByRole('button', { name: '儲存匯出檔' }).click()
@@ -326,7 +307,7 @@ test.describe('with a fake key', () => {
     await openTrip(page, id)
 
     await page.getByRole('button', { name: '更多選項' }).click()
-    await page.getByRole('button', { name: '匯出這趟行程' }).click()
+    await page.getByRole('button', { name: '匯出這篇回憶' }).click()
 
     const download = page.waitForEvent('download')
     await page.getByRole('button', { name: '儲存匯出檔' }).click()
@@ -339,10 +320,10 @@ test.describe('with a fake key', () => {
     await openTrip(page, id)
 
     await page.getByRole('button', { name: '更多選項' }).click()
-    await page.getByRole('button', { name: /刪除這趟行程/ }).click()
-    await expect(page.getByRole('dialog', { name: '刪除這趟行程？' })).toBeVisible()
+    await page.getByRole('button', { name: /刪除這篇回憶/ }).click()
+    await expect(page.getByRole('dialog', { name: '刪除這篇回憶？' })).toBeVisible()
     await shot(page, 'delete-confirm')
-    await page.getByRole('button', { name: '刪除行程' }).click()
+    await page.getByRole('button', { name: '刪除回憶' }).click()
 
     await expect(page).toHaveURL(/#\/$/)
     const trip = await page.evaluate(async ([path, tripId]) => (await (await import(path!)).getTrip(tripId)) ?? null, [STORAGE, id])
@@ -351,8 +332,8 @@ test.describe('with a fake key', () => {
 
   test('shows a friendly page for a missing trip', async ({ page }) => {
     await page.goto('./#/trip/no-such-trip')
-    await expect(page.getByRole('heading', { name: '找不到這趟行程' })).toBeVisible()
-    await expect(page.getByRole('link', { name: '回到首頁' })).toHaveAttribute('href', '#/')
+    await expect(page.getByRole('heading', { name: '找不到這篇回憶' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '回首頁' })).toHaveAttribute('href', '#/')
     await shot(page, 'not-found')
   })
 

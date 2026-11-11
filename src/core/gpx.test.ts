@@ -108,7 +108,7 @@ describe('parseGpx', () => {
     }
 
     for (const empty of [gpx11(''), gpx11('<wpt lat="1" lon="2"/>'), gpx11(`<trk><trkseg>${pt(99, 1)}</trkseg></trk>`)]) {
-      expect(() => parseGpx(empty)).toThrow(new Error('GPX 裡沒有軌跡點'))
+      expect(() => parseGpx(empty)).toThrow(new Error('GPX 裡沒有任何定位點'))
     }
   })
 

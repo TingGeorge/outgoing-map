@@ -33,7 +33,7 @@ test('a GPX plus the four photos make a trip and land on the journal', async ({ 
   await gpxInput(page).setInputFiles(fixture('hehuan-north.gpx'))
 
   await expect(page.getByText('hehuan-north.gpx')).toBeVisible()
-  await expect(page.getByText(/\d+ 個軌跡點/)).toBeVisible()
+  await expect(page.getByText(/\d+ 個定位點/)).toBeVisible()
   await expect(page.getByText(/公里/)).toBeVisible()
   await expect(page.getByLabel('這趟的名字')).toHaveValue('合歡北峰')
 
@@ -45,7 +45,7 @@ test('a GPX plus the four photos make a trip and land on the journal', async ({ 
 
   await expect(page.getByRole('heading', { level: 1, name: '回憶存好了' })).toBeVisible()
   await expect(page.getByText('加入了 4 張照片')).toBeVisible()
-  await expect(page.getByText('依拍攝時間放上軌跡')).toBeVisible()
+  await expect(page.getByText('依拍攝時間放上路線')).toBeVisible()
 
   await page.getByRole('button', { name: '看這趟日誌' }).click()
   await expect(page).toHaveURL(/#\/trip\/[^/]+$/)
@@ -113,7 +113,7 @@ test('only broken photos: no trip is left behind', async ({ page }) => {
   await photoInput(page).setInputFiles([{ name: 'broken.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('nope') }])
   await page.getByRole('button', { name: '建立回憶' }).click()
 
-  await expect(page.getByRole('alert')).toContainText('沒有建立行程')
+  await expect(page.getByRole('alert')).toContainText('沒有建立回憶')
   await expect(page.getByText('broken.jpg')).toBeVisible()
 
   await page.goto('./#/')
@@ -128,7 +128,7 @@ test('photos from another day than the GPX are flagged but still added', async (
   await photoInput(page).setInputFiles(PHOTOS)
   await page.getByRole('button', { name: '建立回憶' }).click()
 
-  await expect(page.getByText('照片的時間和這條軌跡對不上')).toBeVisible()
+  await expect(page.getByText('照片的時間和這條路線對不上')).toBeVisible()
   await expect(page.getByText('加入了 4 張照片')).toBeVisible()
 })
 
@@ -144,6 +144,40 @@ test('leaving with picked files asks first', async ({ page }) => {
   await page.getByRole('button', { name: '回首頁' }).click()
   await page.getByRole('button', { name: '離開' }).click()
   await expect(page).toHaveURL(/#\/$/)
+})
+
+test('the browser Back button asks too, and Stay keeps the picked files', async ({ page }) => {
+  await page.goto('./#/')
+  await page.getByRole('link', { name: '新的回憶' }).click()
+  await photoInput(page).setInputFiles(PHOTOS.slice(0, 2))
+  await expect(page.getByText('已選 2 張照片')).toBeVisible()
+
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: '要離開嗎？' })).toBeVisible()
+  await page.getByRole('button', { name: '留下來' }).click()
+  await expect(page).toHaveURL(/#\/new$/)
+  await expect(page.getByText('已選 2 張照片')).toBeVisible()
+
+  await page.goBack()
+  await page.getByRole('button', { name: '離開' }).click()
+  await expect(page).toHaveURL(/#\/$/)
+  await expect(page.getByRole('link', { name: '新的回憶' })).toBeVisible()
+
+  await page.goBack()
+  await expect(page).not.toHaveURL(/#\/new$/)
+})
+
+test('after creating, Back from the journal goes home, not to the spent form', async ({ page }) => {
+  await page.goto('./#/')
+  await page.getByRole('link', { name: '新的回憶' }).click()
+  await gpxInput(page).setInputFiles(fixture('hehuan-north.gpx'))
+  await page.getByRole('button', { name: '建立回憶' }).click()
+  await page.getByRole('button', { name: '看這趟日誌' }).click()
+  await expect(page).toHaveURL(/#\/trip\/[^/]+$/)
+
+  await page.goBack()
+  await expect(page).toHaveURL(/#\/$/)
+  await expect(page.getByRole('link', { name: '新的回憶' })).toBeVisible()
 })
 
 test('leaving an empty form needs no confirmation', async ({ page }) => {

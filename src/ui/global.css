@@ -68,9 +68,21 @@ button,
   -webkit-touch-callout: none;
 }
 
-:focus-visible {
+:where(:focus-visible) {
   outline: 3px solid var(--color-accent);
   outline-offset: 2px;
+}
+
+.screen-loading {
+  justify-content: center;
+  align-items: center;
+  animation: appear 200ms 300ms both;
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
 }
 
 .visually-hidden {

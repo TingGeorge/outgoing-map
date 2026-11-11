@@ -1,7 +1,7 @@
 import exifr from 'exifr'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildRoute, exifTimeToEpoch, parseGpx } from '../../core'
-import { navigate } from '../../router'
+import { goBack, navigate } from '../../router'
 import { addPhotos, createTrip, deleteTrip, getTrip, listPhotos, saveTrack } from '../../storage'
 import { PHOTO_TIME_TOLERANCE_MS, type Id, type PhotoImportFailure, type TrackPoint } from '../../types'
 import {
@@ -14,6 +14,7 @@ import {
   IconButton,
   Notice,
   PhotoIcon,
+  ProgressBar,
   RouteIcon,
   Screen,
   SectionTitle,
@@ -109,7 +110,7 @@ function ResultView({ summary, onOpen }: { summary: Summary; onOpen: () => void 
 
         {error && (
           <Notice tone="error" title="存到一半出了問題">
-            {error} 已經存下來的內容保留在這趟行程裡。
+            {error} 已經存下來的內容保留在這篇回憶裡。
           </Notice>
         )}
 
@@ -120,7 +121,7 @@ function ResultView({ summary, onOpen }: { summary: Summary; onOpen: () => void 
             <p className={s.summaryHead}>加入了 {added} 張照片</p>
             <dl className={s.counts}>
               <div>
-                <dt>依拍攝時間放上軌跡</dt>
+                <dt>依拍攝時間放上路線</dt>
                 <dd>{byTime}</dd>
               </div>
               <div>
@@ -136,8 +137,8 @@ function ResultView({ summary, onOpen }: { summary: Summary; onOpen: () => void 
         )}
 
         {offWindow && (
-          <Notice tone="warning" title="照片的時間和這條軌跡對不上">
-            多數照片不是在這段軌跡前後半小時內拍的。可能是選到別天的照片，或相機的時間不準。照片已經加入，你可以到日誌裡刪掉，或換一個正確的 GPX。
+          <Notice tone="warning" title="照片的時間和這條路線對不上">
+            多數照片不是在這條路線的時間前後半小時內拍的。可能是選到別天的照片，或相機的時間不準。照片已經加入，你可以到日誌裡刪掉，或換一個正確的 GPX。
           </Notice>
         )}
 
@@ -220,9 +221,37 @@ export function NewTripScreen() {
     })
   }
 
+  const [armed, setArmed] = useState(0)
+  const guarded = dirty || saving
+  const savingNow = useRef(saving)
+  savingNow.current = saving
+
+  useEffect(() => {
+    if (!guarded) return
+
+    history.pushState({ ...history.state, leaveGuard: true }, '')
+
+    const onPop = () => {
+      if (savingNow.current) setArmed((n) => n + 1)
+      else setLeaving(true)
+    }
+
+    addEventListener('popstate', onPop)
+
+    return () => {
+      removeEventListener('popstate', onPop)
+      if (history.state?.leaveGuard) history.back()
+    }
+  }, [guarded, armed])
+
   const back = () => {
-    if (dirty) setLeaving(true)
-    else navigate({ name: 'home' })
+    if (dirty) history.back()
+    else goBack({ name: 'home' })
+  }
+
+  const stay = () => {
+    setLeaving(false)
+    setArmed((n) => n + 1)
   }
 
   const create = async () => {
@@ -240,7 +269,7 @@ export function NewTripScreen() {
     }
 
     try {
-      setPhase({ name: 'saving', step: '正在建立行程…', done: 0, total: 0 })
+      setPhase({ name: 'saving', step: '正在建立回憶…', done: 0, total: 0 })
       const trip = await createTrip({ title: finalTitle })
       tripId = trip.id
 
@@ -262,7 +291,7 @@ export function NewTripScreen() {
         addedIds = new Set(result.added.map((p) => p.id))
 
         if (!gpx && addedIds.size === 0) {
-          await rollback('沒有任何一張照片可以加入，所以沒有建立行程。', failed)
+          await rollback('沒有任何一張照片可以加入，所以沒有建立回憶。', failed)
           return
         }
       }
@@ -295,7 +324,7 @@ export function NewTripScreen() {
       const saved = tripId ? await getTrip(tripId).catch(() => undefined) : undefined
 
       if (!tripId || !saved || (!saved.hasTrack && saved.photoCount === 0)) {
-        await rollback(`沒有建立行程。${message}`)
+        await rollback(`沒有建立回憶。${message}`)
         return
       }
 
@@ -328,19 +357,7 @@ export function NewTripScreen() {
         <div className={s.stack} aria-live="polite">
           <h1 className={s.title}>正在存你的回憶</h1>
           {phase.total > 0 ? (
-            <div className={s.progressWrap}>
-              <span className={s.progressLabel}>{`${phase.step} ${phase.done} / ${phase.total}`}</span>
-              <div
-                className={s.track}
-                role="progressbar"
-                aria-label={phase.step}
-                aria-valuemin={0}
-                aria-valuemax={phase.total}
-                aria-valuenow={phase.done}
-              >
-                <div className={s.fill} style={{ width: `${(phase.done / phase.total) * 100}%` }} />
-              </div>
-            </div>
+            <ProgressBar value={phase.done} max={phase.total} label={`${phase.step} ${phase.done} / ${phase.total}`} />
           ) : (
             <Spinner label={phase.step} />
           )}
@@ -366,7 +383,7 @@ export function NewTripScreen() {
       }
     >
       <div className={s.top}>
-        <IconButton label="回首頁" onClick={back}>
+        <IconButton label="回首頁" variant="moss" onClick={back}>
           <BackIcon />
         </IconButton>
         <h1 className={s.title}>新的回憶</h1>
@@ -382,7 +399,7 @@ export function NewTripScreen() {
       )}
 
       <section className={s.section}>
-        <SectionTitle>路線檔 GPX</SectionTitle>
+        <SectionTitle>GPX 檔</SectionTitle>
 
         {gpx ? (
           <Card radius="md" className={s.picked}>
@@ -393,7 +410,7 @@ export function NewTripScreen() {
               <span className={s.fileName}>{gpx.fileName}</span>
             </div>
             <ul className={s.facts}>
-              <li>{gpx.points.length} 個軌跡點</li>
+              <li>{gpx.points.length} 個定位點</li>
               {gpx.startAt !== null && (
                 <li>
                   {formatDate(gpx.startAt, true)}
@@ -404,10 +421,10 @@ export function NewTripScreen() {
               {gpx.startAt === null && <li>這個檔案沒有時間，照片只能靠自己的位置放上路線</li>}
             </ul>
             <div className={s.row}>
-              <FilePicker variant="ghost" onFiles={pickGpx}>
+              <FilePicker variant="ghost" inline onFiles={pickGpx}>
                 換一個檔案
               </FilePicker>
-              <Button variant="ghost" onClick={() => setGpx(null)}>
+              <Button variant="ghost" inline onClick={() => setGpx(null)}>
                 移除
               </Button>
             </div>
@@ -443,7 +460,7 @@ export function NewTripScreen() {
               {photos.length ? '再加幾張' : '選擇照片'}
             </FilePicker>
             {photos.length > 0 && (
-              <Button variant="ghost" onClick={() => setPhotos([])}>
+              <Button variant="ghost" inline onClick={() => setPhotos([])}>
                 全部清除
               </Button>
             )}
@@ -465,8 +482,8 @@ export function NewTripScreen() {
         message="你選好的檔案還沒有存下來，離開後要重新選。"
         confirmLabel="離開"
         cancelLabel="留下來"
-        onCancel={() => setLeaving(false)}
-        onConfirm={() => navigate({ name: 'home' })}
+        onCancel={stay}
+        onConfirm={() => goBack({ name: 'home' })}
       />
     </Screen>
   )

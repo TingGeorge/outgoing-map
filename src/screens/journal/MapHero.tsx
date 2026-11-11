@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'rea
 import type { GeoJSONSource, LngLatBoundsLike, Map as MlMap, Marker } from 'maplibre-gl'
 import { distanceM, sampleAtDistance } from '../../core'
 import { getKey, validateKey } from '../../key'
+import { loadMapLibre, mapContainer, type MapLibre } from '../../map/maplibre'
 import { flatStyle, routeLayers } from '../../map/sources'
 import { getPhotoUrl } from '../../storage'
 import type { Photo, PoiOnRoute, Route } from '../../types'
@@ -10,8 +11,6 @@ import { photoAlt } from './text'
 import s from './journal.module.css'
 
 type Problem = 'load' | 'webgl' | 'key' | 'offline'
-
-type Lib = typeof import('maplibre-gl')
 
 export type Scrub = (distanceM: number | null) => void
 
@@ -119,7 +118,7 @@ function thin(entries: Entry[], blockers: Entry[] = []) {
 
 export function MapHero({ route, photos, pois, expanded, onExpand, onCollapse, onOpenPhoto, scrub, controls }: Props) {
   const container = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<{ map: MlMap; lib: Lib } | null>(null)
+  const mapRef = useRef<{ map: MlMap; lib: MapLibre } | null>(null)
   const [ready, setReady] = useState(false)
   const [problem, setProblem] = useState<Problem | null>(null)
 
@@ -132,17 +131,10 @@ export function MapHero({ route, photos, pois, expanded, onExpand, onCollapse, o
     let observer: ResizeObserver | undefined
 
     void (async () => {
-      let lib: Lib
+      let lib: MapLibre
 
       try {
-        const [module, worker] = await Promise.all([
-          import('maplibre-gl'),
-          import('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'),
-          import('maplibre-gl/dist/maplibre-gl.css'),
-        ])
-
-        lib = module
-        lib.setWorkerUrl(worker.default)
+        lib = await loadMapLibre()
       } catch {
         if (!cancelled) setProblem('load')
         return
@@ -179,12 +171,16 @@ export function MapHero({ route, photos, pois, expanded, onExpand, onCollapse, o
       let checked = false
 
       m.on('error', (e) => {
-        if (checked || (e as { sourceId?: string }).sourceId !== 'outdoors') return
+        if (cancelled || checked || (e as { sourceId?: string }).sourceId !== 'outdoors') return
         checked = true
 
-        void validateKey(key).then((result) => {
-          if (!cancelled && result !== 'valid') setProblem(result === 'invalid' ? 'key' : 'offline')
-        })
+        setTimeout(() => {
+          if (cancelled) return
+
+          void validateKey(key).then((result) => {
+            if (!cancelled && result !== 'valid') setProblem(result === 'invalid' ? 'key' : 'offline')
+          })
+        }, 1000)
       })
 
       m.on('load', () => {
@@ -396,7 +392,7 @@ export function MapHero({ route, photos, pois, expanded, onExpand, onCollapse, o
 
   return (
     <section className={expanded ? `${s.hero} ${s.heroExpanded}` : s.hero} aria-label="路線地圖">
-      <div ref={container} className={s.map} />
+      <div ref={container} className={`${s.map} ${mapContainer}`} />
 
       {problem && (
         <div className={s.mapProblem}>

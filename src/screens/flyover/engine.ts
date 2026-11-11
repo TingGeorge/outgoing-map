@@ -1,4 +1,5 @@
 import type { JumpToOptions, LngLat, Map as MapLibreMap, Marker } from 'maplibre-gl'
+import { loadMapLibre, type MapLibre } from '../../map/maplibre'
 import { ROUTE_COLOR, TERRAIN_EXAGGERATION, flyoverStyle, routeLayers } from '../../map/sources'
 import {
   CLEARANCE_FRACTIONS,
@@ -17,7 +18,6 @@ const RAD = Math.PI / 180
 
 export const CHASE = { backM: 1300, heightM: 520, focusY: 0.56 }
 
-const HAZE = '#B9C4B0'
 const INTRO_MS = 4000
 const OUTRO_MS = 3000
 const JUMP_MS = 900
@@ -76,14 +76,6 @@ interface Transition {
   freeze: boolean
 }
 
-function hasWebGL2() {
-  try {
-    return !!document.createElement('canvas').getContext('webgl2')
-  } catch {
-    return false
-  }
-}
-
 const easeInOut = (k: number) => (k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2)
 
 export function startFlight(
@@ -94,7 +86,7 @@ export function startFlight(
   reducedMotion: boolean,
   hooks: FlightHooks,
 ): Flight {
-  let lib: typeof import('maplibre-gl') | null = null
+  let lib: MapLibre | null = null
   let map: MapLibreMap | null = null
   let hiker: Marker | null = null
   let destroyed = false
@@ -403,16 +395,8 @@ export function startFlight(
   }
 
   const boot = async () => {
-    if (!hasWebGL2()) return hooks.fail('webgl')
-
     try {
-      const [module, worker] = await Promise.all([
-        import('maplibre-gl'),
-        import('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'),
-        import('maplibre-gl/dist/maplibre-gl.css'),
-      ])
-      lib = module
-      lib.setWorkerUrl(worker.default)
+      lib = await loadMapLibre()
     } catch {
       return hooks.fail(navigator.onLine ? 'map' : 'network')
     }
@@ -477,8 +461,6 @@ export function startFlight(
 
     m.once('load', () => {
       if (destroyed) return
-
-      m.setPaintProperty('background', 'background-color', HAZE)
 
       const coordinates = Array.from({ length: path.count }, (_, i) => [path.lon[i]!, path.lat[i]!])
       m.addSource('flight', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } }, lineMetrics: true })

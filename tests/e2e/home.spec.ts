@@ -20,7 +20,7 @@ test('first run: explains the three steps and offers the main button', async ({ 
 
   await expect(page.getByRole('heading', { level: 1 })).toContainText('想回味哪一座山？')
   await expect(page.getByRole('heading', { name: '把走過的山，變成一篇日誌' })).toBeVisible()
-  await expect(page.getByText('爬山時，用自己的 App 錄軌跡')).toBeVisible()
+  await expect(page.getByText('爬山時，用自己的登山 App 記錄路線')).toBeVisible()
   await expect(page.getByText('把 GPX 檔和照片匯入這裡')).toBeVisible()
   await expect(page.getByRole('link', { name: '設定' })).toHaveAttribute('href', '#/settings')
   await noHorizontalScroll(page)

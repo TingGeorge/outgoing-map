@@ -2,7 +2,7 @@ import { DEFAULT_PHOTO_UTC_OFFSET } from '../types'
 import type { EpochMs, ParsedGpx, TrackPoint } from '../types'
 
 const INVALID_GPX = '這個檔案不是有效的 GPX'
-const NO_POINTS = 'GPX 裡沒有軌跡點'
+const NO_POINTS = 'GPX 裡沒有任何定位點'
 
 export function parseGpx(xml: string): ParsedGpx {
   const doc = new DOMParser().parseFromString(xml.replace(/^\uFEFF/, ''), 'application/xml')

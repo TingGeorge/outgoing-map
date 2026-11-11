@@ -8,11 +8,6 @@
   -webkit-user-select: none;
 }
 
-.map {
-  width: 100%;
-  height: 100%;
-}
-
 .top {
   position: absolute;
   top: calc(max(var(--safe-top), 12px) + 12px);

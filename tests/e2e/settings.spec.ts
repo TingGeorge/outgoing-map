@@ -47,24 +47,26 @@ test('shows the stored key masked and never in full', async ({ page }) => {
   expect(html.includes(FAKE_KEY)).toBe(false)
   expect((await page.locator('body').innerText()).includes(FAKE_KEY)).toBe(false)
   await noHorizontalScroll(page)
-  await expect(page.getByRole('link', { name: '回首頁' })).toHaveAttribute('href', '#/')
+  await page.getByRole('button', { name: '回首頁' }).click()
+  await expect(page).toHaveURL(/#\/$/)
 })
 
 test('without a key the screen offers the tutorial and goes back to it', async ({ page }) => {
   await openSettings(page, null)
 
-  await expect(page.getByText('還沒有地圖金鑰')).toBeVisible()
-  await expect(page.getByRole('link', { name: '開始設定金鑰' })).toHaveAttribute('href', '#/welcome')
-  await expect(page.getByRole('link', { name: '回金鑰教學' })).toHaveAttribute('href', '#/welcome')
-  await expect(page.getByRole('button', { name: '更換金鑰' })).toHaveCount(0)
+  await expect(page.getByText('還沒有地圖鑰匙')).toBeVisible()
+  await expect(page.getByRole('link', { name: '開始設定鑰匙' })).toHaveAttribute('href', '#/welcome')
+  await expect(page.getByRole('button', { name: '更換鑰匙' })).toHaveCount(0)
+  await page.getByRole('button', { name: '回鑰匙教學' }).click()
+  await expect(page).toHaveURL(/#\/welcome$/)
 })
 
 test('a malformed replacement is rejected and the old key is kept', async ({ page }) => {
   await openSettings(page)
-  await page.getByRole('button', { name: '更換金鑰' }).click()
+  await page.getByRole('button', { name: '更換鑰匙' }).click()
 
-  const dialog = page.getByRole('dialog', { name: '更換地圖金鑰' })
-  await dialog.getByLabel('新的地圖金鑰（API Key）').fill('not a real key!!')
+  const dialog = page.getByRole('dialog', { name: '更換地圖鑰匙' })
+  await dialog.getByLabel('新的地圖鑰匙（API Key）').fill('not a real key!!')
 
   await expect(dialog.getByRole('status')).toContainText('這把鑰匙不能用', { timeout: 15_000 })
   await expect(dialog.getByRole('button', { name: '儲存新鑰匙' })).toBeDisabled()
@@ -77,17 +79,17 @@ test('a malformed replacement is rejected and the old key is kept', async ({ pag
 
 test('clearing the key asks first, then offers to set up again', async ({ page }) => {
   await openSettings(page)
-  await page.getByRole('button', { name: '清除金鑰' }).click()
+  await page.getByRole('button', { name: '清除鑰匙' }).click()
 
-  const dialog = page.getByRole('dialog', { name: '清除這把金鑰？' })
+  const dialog = page.getByRole('dialog', { name: '清除這把鑰匙？' })
   await dialog.getByRole('button', { name: '取消' }).click()
   expect((await storedKey(page)) === FAKE_KEY).toBe(true)
 
-  await page.getByRole('button', { name: '清除金鑰' }).click()
-  await dialog.getByRole('button', { name: '清除金鑰' }).click()
+  await page.getByRole('button', { name: '清除鑰匙' }).click()
+  await dialog.getByRole('button', { name: '清除鑰匙' }).click()
 
   expect(await storedKey(page)).toBeNull()
-  await expect(page.getByText('金鑰已清除')).toBeVisible()
+  await expect(page.getByText('鑰匙已清除')).toBeVisible()
   await expect(page.getByRole('link', { name: '重新設定' })).toHaveAttribute('href', '#/welcome')
   await page.getByRole('link', { name: '重新設定' }).click()
   await expect(page).toHaveURL(/#\/welcome$/)
@@ -98,7 +100,7 @@ test('a rejected stored key is explained when checked', async ({ page }) => {
     route.request().url().includes('apikey') ? route.fulfill({ status: 401 }) : route.fulfill({ status: 200, body: '', headers: { 'access-control-allow-origin': '*' } }),
   )
   await openSettings(page)
-  await page.getByRole('button', { name: '檢查金鑰' }).click()
+  await page.getByRole('button', { name: '檢查鑰匙' }).click()
 
   await expect(page.getByRole('status').filter({ hasText: '免費額度' })).toContainText('每個月會重新計算')
 })
@@ -123,7 +125,7 @@ test('shows trip count, storage use and persistence', async ({ page }) => {
   await makeExport(page)
   await page.reload()
 
-  await expect(page.getByText('行程數量').locator('xpath=following-sibling::dd')).toHaveText('1 趟')
+  await expect(page.getByText('回憶數量').locator('xpath=following-sibling::dd')).toHaveText('1 篇')
   await expect(page.getByText('已使用空間').locator('xpath=following-sibling::dd')).toContainText(/MB/)
   await expect(page.getByText('資料保護').locator('xpath=following-sibling::dd')).toHaveText(/已受保護|尚未保護/)
   await noHorizontalScroll(page)
@@ -149,17 +151,17 @@ test.describe('with the real key', () => {
 
   test('checking the stored key reports it valid', async ({ page }) => {
     await openSettings(page, key!)
-    await page.getByRole('button', { name: '檢查金鑰' }).click()
+    await page.getByRole('button', { name: '檢查鑰匙' }).click()
 
     await expect(page.getByRole('status').filter({ hasText: '目前可以用' })).toBeVisible({ timeout: 15_000 })
   })
 
   test('changing to the real key succeeds', async ({ page }) => {
     await openSettings(page)
-    await page.getByRole('button', { name: '更換金鑰' }).click()
+    await page.getByRole('button', { name: '更換鑰匙' }).click()
 
-    const dialog = page.getByRole('dialog', { name: '更換地圖金鑰' })
-    await dialog.getByLabel('新的地圖金鑰（API Key）').fill(key!)
+    const dialog = page.getByRole('dialog', { name: '更換地圖鑰匙' })
+    await dialog.getByLabel('新的地圖鑰匙（API Key）').fill(key!)
     await expect(dialog.getByRole('status')).toContainText('鑰匙可以用了', { timeout: 15_000 })
     await dialog.getByRole('button', { name: '儲存新鑰匙' }).click()
 

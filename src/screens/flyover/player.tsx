@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { mapContainer } from '../../map/maplibre'
 import { NLSC_ATTRIBUTION, TERRAIN_ATTRIBUTION } from '../../map/sources'
-import { href, navigate } from '../../router'
+import { goBack } from '../../router'
 import { getPhotoUrl } from '../../storage'
 import {
   Button,
@@ -149,7 +150,7 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
 
   const shape = useMemo(() => (data ? profileShape(data) : null), [data])
   const clipId = `flight-clip-${attempt}`
-  const close = () => navigate({ name: 'trip', id: tripId }, { replace: true })
+  const close = () => goBack({ name: 'trip', id: tripId })
 
   useEffect(() => {
     if (!data || !shape || !mapRef.current) return
@@ -314,7 +315,7 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
     <div className={s.root} data-state={flight.ended ? 'ended' : flight.playing ? 'playing' : 'paused'} data-phase={phase}>
       <h1 className="visually-hidden">立體播放{data ? `：${data.trip.title}` : ''}</h1>
 
-      <div ref={mapRef} key={attempt} className={s.map} />
+      <div ref={mapRef} key={attempt} className={mapContainer} />
 
       {ready && (
         <>
@@ -464,7 +465,7 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
                       再試一次
                     </Button>
                   )}
-                  <Button variant="ghost" href={href({ name: 'trip', id: tripId })}>
+                  <Button variant="ghost" onClick={close}>
                     回到日誌
                   </Button>
                 </div>

@@ -1,4 +1,16 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+
+const FAKE_KEY = 'ffffffffffffffffffffffffffffffff'
+
+async function seedTrip(page: Page): Promise<string> {
+  return page.evaluate(async () => {
+    const storage = await import('/src/storage/index.ts' as string)
+    const core = await import('/src/core/index.ts' as string)
+    const trip = await storage.createTrip({ title: '合歡北峰' })
+    await storage.saveTrack(trip.id, core.parseGpx(await (await fetch('/tests/fixtures/hehuan-north.gpx')).text()).points)
+    return trip.id as string
+  })
+}
 
 test('without a key, the app opens the key tutorial', async ({ page }) => {
   await page.goto('./#/')
@@ -8,25 +20,101 @@ test('without a key, the app opens the key tutorial', async ({ page }) => {
 
 test.describe('with a stored key', () => {
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => localStorage.setItem('thunderforest-key', 'placeholder'))
+    await page.addInitScript((key) => localStorage.setItem('thunderforest-key', key), FAKE_KEY)
+    await page.route('https://tile.thunderforest.com/**', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: '' }))
   })
 
-  test('home shows its heading and primary action', async ({ page }) => {
+  test('every route renders its screen, survives a reload, and an unknown route goes home', async ({ page }) => {
     await page.goto('./#/')
-    await expect(page.getByRole('heading', { level: 1, name: /今天想回味\s*哪一座山/ })).toBeVisible()
-    await expect(page.getByRole('link', { name: '新的回憶' })).toBeVisible()
-    await expect(page.getByRole('link', { name: '設定' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: /想回味哪一座山/ })).toBeVisible()
+    const id = await seedTrip(page)
+
+    for (const [hash, heading] of [
+      ['#/new', '新的回憶'],
+      [`#/trip/${id}`, '合歡北峰'],
+      [`#/trip/${id}/fly`, '立體播放'],
+      ['#/settings', '設定'],
+    ] as const) {
+      await page.goto(`./${hash}`)
+      await expect(page.getByRole('heading', { level: 1, name: heading })).toBeAttached()
+      await page.reload()
+      await expect(page.getByRole('heading', { level: 1, name: heading })).toBeAttached()
+    }
+
+    await page.goto('./#/nowhere')
+    await expect(page).toHaveURL(/#\/$/)
   })
 
-  for (const [hash, heading] of [
-    ['#/new', '新的回憶'],
-    ['#/trip/sample', '日誌'],
-    ['#/trip/sample/fly', '立體播放'],
-    ['#/settings', '設定'],
-  ]) {
-    test(`${hash} renders its placeholder`, async ({ page }) => {
+  test('Back walks the screens in order and the in-app back buttons match it', async ({ page }) => {
+    await page.goto('./#/')
+    const id = await seedTrip(page)
+    await page.reload()
+
+    await page.getByRole('link', { name: /合歡北峰/ }).click()
+    await expect(page).toHaveURL(new RegExp(`#/trip/${id}$`))
+    await page.getByRole('link', { name: '立體播放' }).click()
+    await expect(page).toHaveURL(/\/fly$/)
+
+    await page.getByRole('button', { name: '關閉播放' }).click()
+    await expect(page).toHaveURL(new RegExp(`#/trip/${id}$`))
+    await page.getByRole('button', { name: '回首頁' }).click()
+    await expect(page).toHaveURL(/#\/$/)
+
+    await page.getByRole('link', { name: '設定' }).click()
+    await page.getByRole('button', { name: '回首頁' }).click()
+    await expect(page).toHaveURL(/#\/$/)
+
+    await page.goForward()
+    await expect(page).toHaveURL(/#\/settings$/)
+    await page.goBack()
+    await expect(page).toHaveURL(/#\/$/)
+    await expect(page.getByRole('heading', { level: 1, name: /想回味哪一座山/ })).toBeVisible()
+  })
+
+  test('from a deep link, the in-app back buttons land on the parent screen', async ({ page }) => {
+    await page.goto('./#/')
+    const id = await seedTrip(page)
+
+    const deepLink = async (hash: string) => {
+      await page.goto('about:blank')
       await page.goto(`./${hash}`)
-      await expect(page.getByRole('heading', { level: 1 })).toContainText(heading!)
-    })
-  }
+    }
+
+    await deepLink(`#/trip/${id}/fly`)
+    await page.getByRole('button', { name: '關閉播放' }).click()
+    await expect(page).toHaveURL(new RegExp(`#/trip/${id}$`))
+
+    await deepLink(`#/trip/${id}`)
+    await page.getByRole('button', { name: '回首頁' }).click()
+    await expect(page).toHaveURL(/#\/$/)
+
+    await deepLink('#/settings')
+    await page.getByRole('button', { name: '回首頁' }).click()
+    await expect(page).toHaveURL(/#\/$/)
+  })
+
+  test('a sheet opened by tap shows no focus ring, by keyboard it does, and a toast shows above it', async ({ page }) => {
+    await page.goto('./#/')
+    const id = await seedTrip(page)
+    await page.goto(`./#/trip/${id}`)
+
+    await page.getByRole('button', { name: '更多選項' }).click()
+    const sheet = page.getByRole('dialog', { name: '這篇回憶' })
+    await expect(sheet).toBeVisible()
+    const ring = () => page.evaluate(() => getComputedStyle(document.activeElement!).outlineStyle)
+    expect(await ring()).toBe('none')
+
+    await page.evaluate(async () => (await import('/src/ui/toast.ts' as string)).toast('測試訊息'))
+    const toast = page.getByText('測試訊息')
+    await expect(toast).toBeVisible()
+    expect(await toast.evaluate((el) => el.closest('[popover]')!.matches(':popover-open'))).toBe(true)
+
+    await page.keyboard.press('Escape')
+    await expect(sheet).toBeHidden()
+    await page.getByRole('button', { name: '更多選項' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(sheet).toBeVisible()
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('BUTTON')
+    expect(await ring()).toBe('solid')
+  })
 })

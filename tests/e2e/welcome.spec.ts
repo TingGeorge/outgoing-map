@@ -4,7 +4,7 @@ const FAKE_KEY = 'ffffffffffffffffffffffffffffffff'
 const SIGN_UP = 'https://manage.thunderforest.com/**'
 
 const heading = (page: Page) => page.getByRole('heading', { level: 1 })
-const field = (page: Page) => page.getByLabel('地圖金鑰（API Key）')
+const field = (page: Page) => page.getByLabel('地圖鑰匙（API Key）')
 
 async function noHorizontalScroll(page: Page) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)

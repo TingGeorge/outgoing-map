@@ -1,5 +1,3 @@
-import exifr from 'exifr'
-import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { openDB } from 'idb'
 import type { DBSchema, IDBPDatabase, IDBPTransaction, StoreNames } from 'idb'
 import { buildRoute, exifTimeToEpoch, placePhotos, routeStats } from '../core'
@@ -25,17 +23,28 @@ const EXPORT_FORMAT = 'hiking-memories-trip'
 const EXPORT_VERSION = 1
 
 const MSG = {
-  noTrip: '找不到這趟行程',
+  noTrip: '找不到這篇回憶',
   noPhoto: '找不到這張照片',
-  coverNotInTrip: '封面照片不在這趟行程裡',
-  full: '裝置的儲存空間不足，請刪除一些照片或行程後再試',
+  coverNotInTrip: '封面照片不在這篇回憶裡',
+  full: '裝置的儲存空間不足，請刪除一些照片或回憶後再試',
   otherTab: '登山回憶已在另一個分頁更新，請重新整理這個頁面',
   db: '無法存取裝置上的資料，請重新整理頁面後再試',
-  notArchive: '這個檔案不是登山回憶的行程匯出檔',
+  notArchive: '這個檔案不是登山回憶的匯出檔',
   newer: '這個匯出檔來自較新版本的登山回憶，請先更新 App',
   incomplete: '匯出檔不完整，缺少照片',
   badPhoto: '匯出檔裡有照片無法讀取',
+  code: 'App 的一部分沒有下載成功，請連上網路後重新載入',
 }
+
+function lazyLib<T>(load: () => Promise<T>): () => Promise<T> {
+  return () =>
+    load().catch((e: unknown) => {
+      throw new Error(MSG.code, { cause: e })
+    })
+}
+
+const loadExifr = lazyLib(() => import('exifr').then((m) => m.default))
+const loadZip = lazyLib(() => import('fflate'))
 
 export const PHOTO_FAILURE = {
   duplicate: '這張照片已經加入過了',
@@ -271,7 +280,7 @@ interface ExifInfo {
 
 type RawExif = Partial<Record<string, unknown>>
 
-async function readExif(bytes: ArrayBuffer): Promise<ExifInfo> {
+async function readExif(exifr: Awaited<ReturnType<typeof loadExifr>>, bytes: ArrayBuffer): Promise<ExifInfo> {
   const tags: RawExif = await exifr
     .parse(bytes, { reviveValues: false, translateValues: false, tiff: true, exif: true, gps: true })
     .catch(() => undefined) ?? {}
@@ -323,6 +332,7 @@ export async function addPhotos(
 ): Promise<AddPhotosResult> {
   if (!(await getTrip(tripId))) throw new Error(MSG.noTrip)
 
+  const exifr = await loadExifr()
   const addedIds: Id[] = []
   const failed: PhotoImportFailure[] = []
 
@@ -337,7 +347,7 @@ export async function addPhotos(
     } else if (await run('readonly', ['photos'], (tx) => isDuplicate(tx, tripId, sourceKey))) {
       fail(PHOTO_FAILURE.duplicate)
     } else {
-      const exif = await readExif(bytes)
+      const exif = await readExif(exifr, bytes)
       const rendered = await renderImage(file, exif.orientation, true).catch(() => null)
 
       if (!rendered) {
@@ -428,6 +438,7 @@ interface Manifest {
 }
 
 export async function exportTrip(id: Id): Promise<Blob> {
+  const { strToU8, zipSync } = await loadZip()
   const { manifest, files } = await run('readonly', ALL, async (tx) => {
     const trip = await tx.objectStore('trips').get(id)
     if (!trip) throw new Error(MSG.noTrip)
@@ -458,7 +469,7 @@ export async function exportTrip(id: Id): Promise<Blob> {
   return new Blob([zip], { type: 'application/zip' })
 }
 
-function readManifest(entries: Record<string, Uint8Array>): Manifest {
+function readManifest(entries: Record<string, Uint8Array>, strFromU8: (data: Uint8Array) => string): Manifest {
   const raw = entries['manifest.json']
   if (!raw) throw new Error(MSG.notArchive)
 
@@ -480,6 +491,7 @@ function readManifest(entries: Record<string, Uint8Array>): Manifest {
 }
 
 export async function importTrip(file: Blob): Promise<Trip> {
+  const { strFromU8, unzipSync } = await loadZip()
   let entries: Record<string, Uint8Array>
 
   try {
@@ -488,7 +500,7 @@ export async function importTrip(file: Blob): Promise<Trip> {
     throw new Error(MSG.notArchive)
   }
 
-  const m = readManifest(entries)
+  const m = readManifest(entries, strFromU8)
   const now = Date.now()
   const tripId = crypto.randomUUID()
 
