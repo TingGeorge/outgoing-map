@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'vitest'
 import { buildRoute } from '../../core'
+import { formatKm, formatMetres, formatTime } from '../../ui'
 import {
   angleDelta,
   buildTimeline,
   easeAngle,
+  hudSteps,
   requiredCameraAltitude,
   resamplePath,
   sampleTimeline,
@@ -139,6 +141,28 @@ describe('path', () => {
     expect(Number.isNaN(path.ele[3]!)).toBe(true)
     expect(Number.isNaN(path.time[3]!)).toBe(true)
     expect(path.heading[3]).toBeCloseTo(90, 3)
+    expect(path.breaks).toEqual([])
+  })
+
+  test('a drive between two sections is cut, not flown, and not counted', () => {
+    const walkNorth = Array.from({ length: 101 }, (_, i) => ({ lat: 24 + i * 0.00018, lon: 121, ele: 2000, time: i * 60_000 }))
+    const walkEast = Array.from({ length: 101 }, (_, i) => ({ lat: 24.018, lon: 121.2 + i * 0.0002, ele: 2500, time: 7_200_000 + i * 60_000 }))
+    const path = resamplePath(buildRoute([...walkNorth, ...walkEast], []))
+
+    expect(path.breaks).toHaveLength(1)
+    expect(path.totalM).toBeGreaterThan(3900)
+    expect(path.totalM).toBeLessThan(4200)
+
+    const gapM = (i: number) => Math.hypot((path.lon[i]! - path.lon[i - 1]!) * 101_000, (path.lat[i]! - path.lat[i - 1]!) * 111_000)
+    const b = path.breaks[0]!
+    expect(gapM(b)).toBeGreaterThan(15_000)
+    for (let i = 1; i < path.count; i++) if (i !== b) expect(gapM(i)).toBeLessThan(path.stepM * 2)
+
+    expect(path.heading[b - 1]).toBeCloseTo(0, 1)
+    expect(path.heading[b]).toBeCloseTo(90, 1)
+
+    const timeline = buildTimeline(path.totalM, [])
+    expect(timeline.duration).toBeCloseTo(travelSeconds(path.totalM) + 1.5, 5)
   })
 })
 
@@ -152,5 +176,39 @@ describe('camera clearance', () => {
     const rayAtRidge = need * 0.6 + 1000 * 0.4
 
     expect(rayAtRidge).toBeCloseTo(1530, 6)
+  })
+})
+
+describe('HUD steps', () => {
+  const steps = (d: number, ele: number, time: number) => ({ ...hudSteps(d, ele, time, { distanceM: 0, eleM: 0, minute: 0 }) })
+
+  test('the step only changes when the displayed text changes', () => {
+    const start = Date.UTC(2026, 10, 7, 22, 40, 0)
+    let last = steps(0, 2995, start)
+    let changes = 0
+
+    for (let k = 1; k <= 60 * 120; k++) {
+      const d = k * 2.1
+      const ele = 2995 + k * 0.07
+      const time = start + k * 900
+      const next = steps(d, ele, time)
+
+      expect(Math.abs(Number(formatKm(next.distanceM)) - d / 1000)).toBeLessThanOrEqual((d < 9950 ? 0.05 : 0.5) + 1e-9)
+      expect(formatMetres(next.eleM)).toBe(formatMetres(ele))
+      expect(formatTime(next.minute)).toBe(formatTime(time))
+
+      if (next.distanceM !== last.distanceM || next.eleM !== last.eleM || next.minute !== last.minute) changes++
+      last = next
+    }
+
+    expect(changes).toBeLessThan(1400)
+  })
+
+  test('switches to whole kilometres from 10 km and keeps missing values missing', () => {
+    expect(formatKm(steps(9_949, NaN, NaN).distanceM)).toBe('9.9')
+    expect(formatKm(steps(9_951, NaN, NaN).distanceM)).toBe('10')
+    expect(formatKm(steps(23_600, NaN, NaN).distanceM)).toBe('24')
+    expect(steps(100, NaN, NaN).eleM).toBeNaN()
+    expect(steps(100, NaN, NaN).minute).toBeNaN()
   })
 })

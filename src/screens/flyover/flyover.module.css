@@ -212,15 +212,103 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  column-gap: 10px;
+  column-gap: 14px;
   font-size: 11px;
-  line-height: 1.4;
+  line-height: 1.6;
   color: var(--color-ink-muted);
   text-align: center;
 }
 
 .credit a {
   color: inherit;
+}
+
+.credit a {
+  position: relative;
+}
+
+.credit a::after {
+  content: '';
+  position: absolute;
+  inset: -5px -6px;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .top {
+    top: calc(max(var(--safe-top), 8px) + 4px);
+  }
+
+  .trouble {
+    top: calc(max(var(--safe-top), 8px) + 56px);
+  }
+
+  .card {
+    bottom: calc(max(var(--safe-bottom), 6px) + 4px);
+    max-width: 760px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'head head distance'
+      'controls scrubber scrubber'
+      'credit credit credit';
+    align-items: center;
+    column-gap: 14px;
+    row-gap: 2px;
+    padding: 8px 16px 2px;
+    border-radius: 22px;
+  }
+
+  .cardHead {
+    grid-area: head;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+
+  .title {
+    font-size: var(--text-lg);
+  }
+
+  .distance {
+    grid-area: distance;
+    margin: 0;
+    white-space: nowrap;
+  }
+
+  .scrubber {
+    grid-area: scrubber;
+    height: 44px;
+  }
+
+  .controls {
+    grid-area: controls;
+    min-height: 0;
+    gap: 8px;
+  }
+
+  .side {
+    width: 44px;
+    height: 44px;
+  }
+
+  .main {
+    width: 48px;
+    height: 48px;
+  }
+
+  .credit {
+    grid-area: credit;
+  }
+
+  .popIn,
+  .popOut {
+    top: calc(max(var(--safe-top), 8px) + 60px);
+    left: calc(24px + var(--safe-left));
+    width: min(170px, 30vw);
+  }
+
+  .pop img {
+    max-height: 30vh;
+  }
 }
 
 .leaderLayer {

@@ -172,3 +172,82 @@ test('without the tile servers it says the 3D view needs a network connection', 
 
   await expect(page.getByText('立體畫面需要網路連線').first()).toBeVisible(READY)
 })
+
+test('when no imagery loads at all it does not fly over nothing and offers a retry', async ({ page }) => {
+  const { id } = await seed(page, { photos: false })
+  await page.route(/wmts\.nlsc\.gov\.tw/, () => {})
+  await page.goto(`./#/trip/${id}/fly`)
+
+  await expect(root(page)).toHaveAttribute('data-phase', 'network', READY)
+  await expect(page.getByText('立體畫面需要網路連線')).toBeVisible()
+  await expect(page.getByText(/部分/)).toHaveCount(0)
+
+  await page.unroute(/wmts\.nlsc\.gov\.tw/)
+  await page.getByRole('button', { name: '再試一次' }).click()
+  await expect(root(page)).toHaveAttribute('data-phase', 'ready', READY)
+})
+
+test('when only some imagery fails it plays and says part of it is missing', async ({ page }) => {
+  const { id } = await seed(page, { photos: false })
+  let n = 0
+  await page.route(/wmts\.nlsc\.gov\.tw/, (route) => (n++ % 2 ? route.abort('internetdisconnected') : route.continue()))
+  await open(page, id)
+
+  await expect(page.getByText(/網路不穩，部分地形或空拍影像沒有載入/)).toBeVisible(READY)
+})
+
+async function hikerInView(page: Page) {
+  const hiker = (await page.locator('.maplibregl-marker').last().boundingBox())!
+  const card = (await page.locator('[class*="card"]').first().boundingBox())!
+  const top = (await page.getByRole('button', { name: '關閉播放' }).boundingBox())!
+  const y = hiker.y + hiker.height / 2
+  return { y, cardTop: card.y, topBottom: top.y + top.height, cardHeight: card.height }
+}
+
+test('in landscape the controls stay compact and the hiker stays in view, also after rotating mid-flight', async ({ page }) => {
+  const { id } = await seed(page, { photos: false })
+
+  for (const [w, h] of [
+    [844, 390],
+    [932, 430],
+  ] as const) {
+    await page.setViewportSize({ width: w, height: h })
+    await open(page, id)
+    await page.waitForTimeout(5500)
+
+    const v = await hikerInView(page)
+    expect(v.cardHeight).toBeLessThan(h * 0.36)
+    expect(v.y).toBeGreaterThan(v.topBottom)
+    expect(v.y).toBeLessThan(v.cardTop - 12)
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.waitForTimeout(1500)
+  let v = await hikerInView(page)
+  expect(v.y).toBeGreaterThan(v.topBottom)
+  expect(v.y).toBeLessThan(v.cardTop - 12)
+
+  await page.setViewportSize({ width: 844, height: 390 })
+  await page.waitForTimeout(1500)
+  v = await hikerInView(page)
+  expect(v.y).toBeGreaterThan(v.topBottom)
+  expect(v.y).toBeLessThan(v.cardTop - 12)
+})
+
+test('attribution links have a comfortable target and open in a new tab', async ({ page }) => {
+  const { id } = await seed(page, { photos: false })
+  await open(page, id)
+
+  for (const name of ['內政部國土測繪中心', 'Mapzen']) {
+    const link = page.getByRole('link', { name })
+    await expect(link).toHaveAttribute('target', '_blank')
+    await expect(link).toHaveAttribute('rel', 'noopener')
+
+    const box = (await link.boundingBox())!
+    const hit = await page.evaluate(
+      ({ x, top, bottom }) => [top, bottom].map((y) => document.elementFromPoint(x, y)?.closest('a')?.textContent ?? ''),
+      { x: box.x + box.width / 2, top: box.y + box.height / 2 - 11, bottom: box.y + box.height / 2 + 11 },
+    )
+    expect(hit).toEqual([name, name])
+  }
+})

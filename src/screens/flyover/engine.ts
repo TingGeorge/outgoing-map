@@ -1,6 +1,6 @@
 import type { JumpToOptions, LngLat, Map as MapLibreMap, Marker } from 'maplibre-gl'
 import { loadMapLibre, type MapLibre } from '../../map/maplibre'
-import { ROUTE_COLOR, TERRAIN_EXAGGERATION, flyoverStyle, routeLayers } from '../../map/sources'
+import { ROUTE_COLOR, TERRAIN_EXAGGERATION, TERRAIN_SOURCE_ID, flyoverStyle, routeLayers } from '../../map/sources'
 import {
   CLEARANCE_FRACTIONS,
   angleDelta,
@@ -16,7 +16,7 @@ import s from './flyover.module.css'
 const EARTH_RADIUS_M = 6_371_008.8
 const RAD = Math.PI / 180
 
-export const CHASE = { backM: 1300, heightM: 520, focusY: 0.56 }
+export const CHASE = { backM: 1300, heightM: 520, focusY: 0.66 }
 
 const INTRO_MS = 4000
 const OUTRO_MS = 3000
@@ -95,6 +95,7 @@ export function startFlight(
   let isReady = false
   let tileErrors = 0
   let troubleSaid = false
+  const loadedTiles = new Set<string>()
 
   let t = 0
   let last = 0
@@ -109,6 +110,7 @@ export function startFlight(
   let cameraAlt = NaN
   let lastFraction = -1
   let lastD = -1
+  let lastPaint = 0
   let overview: Pose | null = null
 
   const sample = { distanceM: 0, stop: -1 }
@@ -121,6 +123,20 @@ export function startFlight(
   const jump: JumpToOptions = {}
   let fromLngLat: LngLat | null = null
   let toLngLat: LngLat | null = null
+
+  const isBreak = new Uint8Array(path.count)
+  for (const b of path.breaks) isBreak[b] = 1
+
+  const sectionAt = (f: number) => {
+    let n = 0
+    while (n < path.breaks.length && path.breaks[n]! <= f) n++
+    return n
+  }
+
+  let section = 0
+  const sections = [0, ...path.breaks]
+    .map((from, n) => ({ id: n ? `flight-${n}` : 'flight', from, to: (path.breaks[n] ?? path.count) - 1, painted: -1 }))
+    .filter((sec) => sec.to > sec.from)
 
   const motion = (ms: number) => (reducedMotion ? 0 : ms)
 
@@ -159,6 +175,13 @@ export function startFlight(
     applyOnce = true
   }
 
+  const frameHiker = () => {
+    const h = map!.getContainer().clientHeight
+    const insets = hooks.insets()
+    const y = insets.top + Math.max(h - insets.top - insets.bottom, 0) * CHASE.focusY
+    map!.setPadding({ top: Math.max(0, 2 * y - h), bottom: Math.max(0, h - 2 * y), left: 0, right: 0 })
+  }
+
   const computeOverview = () => {
     const m = map!
     let w = Infinity
@@ -194,7 +217,11 @@ export function startFlight(
   const computeChase = (d: number, dt: number) => {
     const f = Math.min(d / (path.stepM || 1), path.count - 1)
     const i = Math.min(Math.floor(f), path.count - 2)
-    const k = f - i
+    const k = isBreak[i + 1] ? 0 : f - i
+
+    const sectionNow = sectionAt(i + k)
+    if (sectionNow !== section) snap = true
+    section = sectionNow
 
     const lon = path.lon[i]! + (path.lon[i + 1]! - path.lon[i]!) * k
     const lat = path.lat[i]! + (path.lat[i + 1]! - path.lat[i]!) * k
@@ -299,11 +326,17 @@ export function startFlight(
     }
 
     const fraction = path.totalM > 0 ? d / path.totalM : 0
-    if (Math.abs(fraction - lastFraction) > 0.0002 || (fraction >= 1 && lastFraction < 1)) {
+    if ((Math.abs(fraction - lastFraction) > 0.0002 || (fraction >= 1 && lastFraction < 1)) && (!playing || now - lastPaint >= 100)) {
       lastFraction = fraction
-      const p = Math.min(Math.max(fraction, 0.00001), 0.99999)
-      m.setPaintProperty('flight-done-casing', 'line-gradient', ['step', ['line-progress'], '#FFFFFF', p, 'rgba(255,255,255,0)'])
-      m.setPaintProperty('flight-done-line', 'line-gradient', ['step', ['line-progress'], ROUTE_COLOR, p, 'rgba(184,74,34,0)'])
+      lastPaint = now
+      for (const sec of sections) {
+        const p = Math.min(Math.max((d / (path.stepM || 1) - sec.from) / (sec.to - sec.from), 0.00001), 0.99999)
+        if (p === sec.painted) continue
+
+        sec.painted = p
+        m.setPaintProperty(`${sec.id}-done-casing`, 'line-gradient', ['step', ['line-progress'], '#FFFFFF', p, 'rgba(255,255,255,0)'])
+        m.setPaintProperty(`${sec.id}-done-line`, 'line-gradient', ['step', ['line-progress'], ROUTE_COLOR, p, 'rgba(184,74,34,0)'])
+      }
     }
 
     info.distanceM = d
@@ -386,11 +419,23 @@ export function startFlight(
     },
   }
 
-  const markReady = () => {
+  const sayTrouble = (slow = false) => {
+    if (troubleSaid || (!slow && navigator.onLine && tileErrors < 6)) return
+    troubleSaid = true
+    hooks.tileTrouble()
+  }
+
+  const markReady = (slow = false) => {
     if (isReady || destroyed || !map) return
+    if (!hiker || !loadedTiles.has('photo') || !loadedTiles.has(TERRAIN_SOURCE_ID)) {
+      clearTimeout(readyTimer)
+      return hooks.fail('network')
+    }
+
     isReady = true
     clearTimeout(readyTimer)
     hooks.ready()
+    sayTrouble(slow)
     if (!reducedMotion) flight.play()
   }
 
@@ -423,6 +468,7 @@ export function startFlight(
     }
 
     const m = map
+    readyTimer = window.setTimeout(() => markReady(true), READY_TIMEOUT_MS)
     fromLngLat = new mgl.LngLat(0, 0)
     toLngLat = new mgl.LngLat(0, 0)
 
@@ -434,13 +480,16 @@ export function startFlight(
       }
 
       tileErrors++
-      if (!isReady && (!navigator.onLine || tileErrors >= 6)) {
+      if (!isReady && !navigator.onLine) {
         clearTimeout(readyTimer)
         hooks.fail('network')
-      } else if (isReady && !troubleSaid && (!navigator.onLine || tileErrors >= 6)) {
-        troubleSaid = true
-        hooks.tileTrouble()
+      } else if (isReady) {
+        sayTrouble()
       }
+    })
+
+    m.on('sourcedata', (e) => {
+      if (e.tile?.state === 'loaded') loadedTiles.add(e.sourceId)
     })
 
     m.on('webglcontextlost', () => hooks.fail('map'))
@@ -453,25 +502,28 @@ export function startFlight(
     })
 
     m.on('resize', () => {
-      if (!isReady) return
-      m.setPadding({ top: Math.max(0, (2 * CHASE.focusY - 1) * m.getContainer().clientHeight), bottom: 0, left: 0, right: 0 })
+      if (!hiker) return
+      frameHiker()
       computeOverview()
       applyOnce = true
     })
 
-    m.once('load', () => {
+    m.once('style.load', () => {
       if (destroyed) return
 
-      const coordinates = Array.from({ length: path.count }, (_, i) => [path.lon[i]!, path.lat[i]!])
-      m.addSource('flight', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } }, lineMetrics: true })
+      for (const sec of sections) {
+        const coordinates = Array.from({ length: sec.to - sec.from + 1 }, (_, i) => [path.lon[sec.from + i]!, path.lat[sec.from + i]!])
+        m.addSource(sec.id, { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } }, lineMetrics: true })
+        m.addLayer({ id: `${sec.id}-all-casing`, type: 'line', source: sec.id, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-opacity': 0.45, 'line-width': 6 } })
+        m.addLayer({ id: `${sec.id}-all-line`, type: 'line', source: sec.id, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ROUTE_COLOR, 'line-opacity': 0.45, 'line-width': 3 } })
+      }
 
-      m.addLayer({ id: 'flight-all-casing', type: 'line', source: 'flight', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-opacity': 0.45, 'line-width': 6 } })
-      m.addLayer({ id: 'flight-all-line', type: 'line', source: 'flight', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ROUTE_COLOR, 'line-opacity': 0.45, 'line-width': 3 } })
-
-      for (const layer of routeLayers('flight-done')) {
-        if (layer.type !== 'line') continue
-        const { 'line-color': _color, ...paint } = layer.paint ?? {}
-        m.addLayer({ ...layer, source: 'flight', paint: { ...paint, 'line-gradient': ['step', ['line-progress'], ROUTE_COLOR, 0.00001, 'rgba(0,0,0,0)'] } })
+      for (const sec of sections) {
+        for (const layer of routeLayers(`${sec.id}-done`)) {
+          if (layer.type !== 'line') continue
+          const { 'line-color': _color, ...paint } = layer.paint ?? {}
+          m.addLayer({ ...layer, source: sec.id, paint: { ...paint, 'line-gradient': ['step', ['line-progress'], ROUTE_COLOR, 0.00001, 'rgba(0,0,0,0)'] } })
+        }
       }
 
       for (const at of stopsM) {
@@ -486,12 +538,13 @@ export function startFlight(
       me.className = s.hiker!
       hiker = new mgl.Marker({ element: me, opacityWhenCovered: '1', subpixelPositioning: true }).setLngLat([path.lon[0]!, path.lat[0]!]).addTo(m)
 
-      m.setPadding({ top: Math.max(0, (2 * CHASE.focusY - 1) * container.clientHeight), bottom: 0, left: 0, right: 0 })
+      frameHiker()
       computeOverview()
       m.jumpTo({ center: overview!.center, zoom: overview!.zoom, pitch: overview!.pitch, bearing: overview!.bearing })
 
-      readyTimer = window.setTimeout(markReady, READY_TIMEOUT_MS)
-      m.once('idle', markReady)
+      m.on('idle', () => {
+        if (!isReady && (tileErrors > 0 || (loadedTiles.has('photo') && loadedTiles.has(TERRAIN_SOURCE_ID)))) markReady()
+      })
 
       last = performance.now()
       raf = requestAnimationFrame(frame)

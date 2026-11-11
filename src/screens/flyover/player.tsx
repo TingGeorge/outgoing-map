@@ -19,6 +19,7 @@ import {
   formatTime,
 } from '../../ui'
 import { startFlight, type FailReason, type Flight, type FlightState } from './engine'
+import { hudSteps, type HudSteps } from './flight'
 import type { FlightData } from './index'
 import s from './flyover.module.css'
 
@@ -156,7 +157,9 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
     if (!data || !shape || !mapRef.current) return
 
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
-    const last = { distance: '', clock: '', ele: '', percent: -1, x: -1 }
+    const last = { distanceM: -1, minute: -1, eleM: -1, percent: -1, x: -1 }
+    const steps: HudSteps = { distanceM: 0, eleM: NaN, minute: NaN }
+    const pointer = { pop: null as HTMLDivElement | null, x: NaN, y: NaN, next: 0 }
     let shownTime = NaN
     const hasTime = !Number.isNaN(data.path.time[0]!) || !Number.isNaN(data.path.time[data.path.count - 1]!)
 
@@ -183,25 +186,24 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
       frame: (info) => {
         fractionRef.current = info.fraction
 
-        const distance = formatKm(info.distanceM)
-        if (distance !== last.distance && distanceRef.current) {
-          last.distance = distance
-          distanceRef.current.textContent = distance
-          distanceRef.current.dataset.distanceM = String(Math.round(info.distanceM))
+        hudSteps(info.distanceM, info.eleM, Number.isNaN(shownTime) ? info.time : shownTime, steps)
+
+        if (!Object.is(steps.distanceM, last.distanceM) && distanceRef.current) {
+          last.distanceM = steps.distanceM
+          distanceRef.current.textContent = formatKm(steps.distanceM)
+          distanceRef.current.dataset.distanceM = String(steps.distanceM)
         }
 
-        const time = Number.isNaN(shownTime) ? info.time : shownTime
-        const clock = hasTime && !Number.isNaN(time) ? formatTime(time) : ''
-        if (clock !== last.clock && clockRef.current) {
-          last.clock = clock
-          clockRef.current.textContent = clock
-          clockRef.current.parentElement!.hidden = !clock
+        const minute = hasTime ? steps.minute : NaN
+        if (!Object.is(minute, last.minute) && clockRef.current) {
+          last.minute = minute
+          clockRef.current.textContent = Number.isNaN(minute) ? '' : formatTime(minute)
+          clockRef.current.parentElement!.hidden = Number.isNaN(minute)
         }
 
-        const ele = Number.isNaN(info.eleM) ? '' : `海拔 ${formatMetres(info.eleM)} 公尺`
-        if (ele !== last.ele && eleRef.current) {
-          last.ele = ele
-          eleRef.current.textContent = ele
+        if (!Object.is(steps.eleM, last.eleM) && eleRef.current) {
+          last.eleM = steps.eleM
+          eleRef.current.textContent = Number.isNaN(steps.eleM) ? '' : `海拔 ${formatMetres(steps.eleM)} 公尺`
         }
 
         const x = Math.round(info.fraction * W * 2) / 2
@@ -216,7 +218,7 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
         if (percent !== last.percent && sliderRef.current) {
           last.percent = percent
           sliderRef.current.setAttribute('aria-valuenow', String(percent))
-          sliderRef.current.setAttribute('aria-valuetext', `已走 ${distance} 公里`)
+          sliderRef.current.setAttribute('aria-valuetext', `已走 ${formatKm(steps.distanceM)} 公里`)
         }
 
         const leader = leaderRef.current
@@ -224,9 +226,19 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
         if (!leader) return
 
         if (Number.isNaN(info.stopX) || !pop) {
-          if (leader.getAttribute('d')) leader.setAttribute('d', '')
+          if (pointer.pop) leader.setAttribute('d', '')
+          pointer.pop = null
           return
         }
+
+        const now = performance.now()
+        const still = Math.abs(info.stopX - pointer.x) < 0.5 && Math.abs(info.stopY - pointer.y) < 0.5
+        if (pop === pointer.pop && still && now < pointer.next) return
+
+        pointer.next = now + 150
+        pointer.pop = pop
+        pointer.x = info.stopX
+        pointer.y = info.stopY
 
         const box = pop.getBoundingClientRect()
         const ax = box.left + box.width * 0.55

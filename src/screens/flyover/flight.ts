@@ -1,4 +1,4 @@
-import { sampleAtDistance } from '../../core'
+import { isRouteGap, sampleAtDistance } from '../../core'
 import type { Route } from '../../types'
 
 const EARTH_RADIUS_M = 6_371_008.8
@@ -13,6 +13,7 @@ export interface Path {
   ele: Float64Array
   time: Float64Array
   heading: Float32Array
+  breaks: number[]
 }
 
 export function resamplePath(route: Route, maxPoints = 3000, headingBackM = 80, headingAheadM = 260): Path {
@@ -45,7 +46,31 @@ export function resamplePath(route: Route, maxPoints = 3000, headingBackM = 80, 
   const back = stepM > 0 ? Math.round(headingBackM / stepM) : 0
   const ahead = stepM > 0 ? Math.max(1, Math.round(headingAheadM / stepM)) : 1
 
-  return { count, stepM, totalM, lon, lat, ele, time, heading: smoothHeadings(x, y, back, ahead) }
+  const breaks = gapBreaks(route, stepM, count)
+  const heading = new Float32Array(count)
+  const starts = [0, ...breaks, count]
+
+  for (let k = 0; k + 1 < starts.length; k++) {
+    const a = starts[k]!
+    const b = starts[k + 1]!
+    heading.set(smoothHeadings(x.subarray(a, b), y.subarray(a, b), back, ahead), a)
+  }
+
+  return { count, stepM, totalM, lon, lat, ele, time, heading, breaks }
+}
+
+function gapBreaks(route: Route, stepM: number, count: number): number[] {
+  const breaks: number[] = []
+  const pts = route.points
+
+  for (let i = 1; i < pts.length; i++) {
+    if (!isRouteGap(pts[i - 1]!, pts[i]!)) continue
+
+    const j = Math.min(Math.floor(pts[i]!.distanceM / (stepM || 1) + 1e-9) + 1, count - 1)
+    if (j > (breaks.at(-1) ?? 0)) breaks.push(j)
+  }
+
+  return breaks
 }
 
 export function smoothHeadings(x: ArrayLike<number>, y: ArrayLike<number>, back: number, ahead: number): Float32Array {
@@ -208,6 +233,19 @@ export function sampleTimeline(tl: Timeline, t: number, out: TimelineSample): Ti
   else s = length - (a * (span - tau) ** 2) / 2
 
   out.distanceM = seg.d0 + Math.min(Math.max(s, 0), length)
+  return out
+}
+
+export interface HudSteps {
+  distanceM: number
+  eleM: number
+  minute: number
+}
+
+export function hudSteps(distanceM: number, eleM: number, time: number, out: HudSteps): HudSteps {
+  out.distanceM = distanceM < 9950 ? Math.round(distanceM / 100) * 100 : Math.round(distanceM / 1000) * 1000
+  out.eleM = Number.isNaN(eleM) ? NaN : Math.round(eleM)
+  out.minute = Number.isNaN(time) ? NaN : Math.floor(time / 60_000) * 60_000
   return out
 }
 
