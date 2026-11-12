@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, test } from 'vitest'
 import type { Photo, PhotoGps, Poi, PoiOnRoute, TrackPoint } from '../types'
-import { SNAP_TO_ROUTE_M, buildRoute, buildTimeline, nearestOnRoute, parseGpx, placePhotos, routeStats } from './index'
+import { SNAP_TO_ROUTE_M, buildRoute, buildTimeline, nearestOnRoute, parseGpx, placePhotos, routeStats, sampleAtDistance } from './index'
 
 const t0 = 1_700_000_000_000
 const MIN = 60_000
@@ -200,9 +200,69 @@ describe('a drawn GPX with made-up times', () => {
     const [close, far] = placePhotos([photo({ gps: gps(121.01, 23.9988, 5) }), photo({ gps: gps(121.01, 23.9985, 5) })], route)
     const corner = route.points[10]!
 
-    expect(close).toMatchObject({ source: 'exif', lat: 24, ele: 1010 })
+    expect(close).toMatchObject({ source: 'exif', lat: 24, ele: 1010, onRoute: true })
     expect(close!.source === 'exif' && close!.lon).toBeCloseTo(121.01, 6)
     expect(far).toEqual({ source: 'exif', lat: 23.9985, lon: 121.01, ele: 5, routeDistanceM: expect.closeTo(corner.distanceM, 3) })
+  })
+  const along = (route: ReturnType<typeof buildRoute>, photos: Photo[]) => placePhotos(photos, route).map((p) => (p.source === 'none' ? NaN : p.routeDistanceM))
+  const reading = (base: ReturnType<typeof buildRoute>, d: number, north = 0) => {
+    const s = sampleAtDistance(base, d)!
+    return gps(s.lon, s.lat + north)
+  }
+
+  const line = () => Array.from({ length: 31 }, (_, i) => tp(121 + i * 0.001, 1000, fake + i * MIN))
+  const untimed = (track: TrackPoint[]) => buildRoute(track.map((p) => ({ ...p, time: null })), [])
+
+  test('GPS jitter between two photos a minute apart does not push later photos to the end', () => {
+    const base = untimed(line())
+    const photos = [1030, 995, 1500, 2000].map((d, i) => photo({ takenAt: day + [0, 1, 20, 40][i]! * MIN, gps: reading(base, d) }))
+    const at = along(buildRoute(line(), photos), photos)
+
+    expect(at).toEqual([...at].sort((a, b) => a - b))
+    expect(at[0]).toBeGreaterThanOrEqual(990)
+    expect(at[1]).toBeLessThanOrEqual(1035)
+    expect(at[2]).toBeCloseTo(1500, -1)
+    expect(at[3]).toBeCloseTo(2000, -1)
+  })
+
+  test('a burst of four summit photos with jitter stays where it was taken, on the right leg', () => {
+    const base = untimed(loop())
+    const truth = [2500, 2510, 2520, 2530]
+    const jitter = [20, -25, 25, -15]
+    const burst = truth.map((d, k) => photo({ takenAt: day + 3.5 * HOUR + k * MIN, gps: reading(base, d + jitter[k]!, 0.00003) }))
+    const photos = [...shots(), ...burst]
+    const at = along(buildRoute(loop(), photos), photos).slice(-4)
+
+    for (const [k, d] of at.entries()) expect(Math.abs(d - truth[k]!)).toBeLessThan(60)
+  })
+
+  test('photos taken in the same second land the same way whatever the file order', () => {
+    const base = untimed(line())
+    const a = photo({ fileName: 'a', takenAt: day, gps: reading(base, 2000) })
+    const b = photo({ fileName: 'b', takenAt: day, gps: reading(base, 1000) })
+    const c = photo({ fileName: 'c', takenAt: day + 10 * MIN, gps: reading(base, 2500) })
+    const route = buildRoute(line(), [a, b, c])
+
+    const forward = along(route, [a, b, c])
+    const reverse = along(route, [b, a, c])
+
+    expect(forward[0]).toBeCloseTo(2000, 0)
+    expect(forward[1]).toBeCloseTo(1000, 0)
+    expect([reverse[1], reverse[0], reverse[2]]).toEqual(forward)
+  })
+
+  test('500 photos on a 100 km route are placed within a second', () => {
+    const track = Array.from({ length: 10_001 }, (_, i) => tp(121 + i * 0.0001, 1000, fake + i * 1000, 24 + 0.002 * Math.sin(i / 300)))
+    const base = untimed(track)
+    const photos = Array.from({ length: 500 }, (_, i) => photo({ takenAt: day + i * MIN, gps: reading(base, (i + 0.5) * (base.totalDistanceM / 500), 0.0002) }))
+    const route = buildRoute(track, photos)
+
+    const started = performance.now()
+    const at = along(route, photos)
+
+    expect(performance.now() - started).toBeLessThan(1000)
+    expect(base.totalDistanceM).toBeGreaterThan(100_000)
+    expect(at).toEqual([...at].sort((a, b) => a - b))
   })
 })
 

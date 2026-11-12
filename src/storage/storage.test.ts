@@ -526,7 +526,7 @@ describe('two tabs', () => {
   test('a newer version in another tab is not blocked, and this tab is told to reload', async () => {
     await storage.listTrips()
 
-    const newer = await openDB('hiking-memories', 3)
+    const newer = await openDB('hiking-memories', 4)
     newer.close()
 
     await expect(storage.listTrips()).rejects.toThrow('請重新整理這個頁面')
@@ -536,8 +536,8 @@ describe('two tabs', () => {
   })
 })
 
-describe('upgrade from version 1', () => {
-  test('saved trips are recomputed once, so a drawn GPX with made-up times uses the photo times', async () => {
+describe('upgrade from an older database', () => {
+  test.each([1, 2])('from version %i saved trips are recomputed once, a broken trip does not stop the others', async (version) => {
     await deleteDB('hiking-memories')
 
     const fake = Date.UTC(2022, 11, 28, 6)
@@ -559,7 +559,7 @@ describe('upgrade from version 1', () => {
       sourceKey: id,
     })
 
-    const v1 = await openDB('hiking-memories', 1, {
+    const v1 = await openDB('hiking-memories', version, {
       upgrade(db) {
         db.createObjectStore('trips', { keyPath: 'id' })
         db.createObjectStore('tracks', { keyPath: 'tripId' })
@@ -570,7 +570,7 @@ describe('upgrade from version 1', () => {
       },
     })
 
-    await v1.put('trips', {
+    const saved = {
       id: 'old',
       title: '日湯真山',
       startAt: fake,
@@ -582,7 +582,11 @@ describe('upgrade from version 1', () => {
       photoCount: 2,
       createdAt: 1,
       updatedAt: 1,
-    })
+    }
+
+    await v1.put('trips', { ...saved, id: 'bad' })
+    await v1.put('tracks', { tripId: 'bad', points: 'broken' })
+    await v1.put('trips', saved)
     await v1.put('tracks', { tripId: 'old', points })
     await v1.put('photos', photo('a', day, 24.00005))
     await v1.put('photos', photo('b', day + 4 * 3_600_000, 24.00025))
@@ -591,6 +595,8 @@ describe('upgrade from version 1', () => {
     const trip = (await storage.getTrip('old'))!
     const [early, late] = await storage.listPhotos('old')
 
+    expect(trip.updatedAt).toBe(1)
+    expect(await storage.getTrip('bad')).toMatchObject({ id: 'bad', updatedAt: 1 })
     expect(trip.startAt).toBe(day)
     expect(trip.endAt).toBe(day + 4 * 3_600_000)
     expect(trip.stats!.durationMs).toBeNull()

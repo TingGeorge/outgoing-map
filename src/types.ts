@@ -49,7 +49,7 @@ export interface PhotoGps extends LatLon {
 export type PlacementSource = 'track' | 'exif' | 'none'
 
 export type Placement =
-  | { source: 'track' | 'exif'; lat: number; lon: number; ele: number | null; routeDistanceM: number }
+  | { source: 'track' | 'exif'; lat: number; lon: number; ele: number | null; routeDistanceM: number; onRoute?: true }
   | { source: 'none' }
 
 export interface Photo {

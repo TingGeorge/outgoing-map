@@ -185,6 +185,8 @@ function Journal({ data, reload }: { data: Data; reload: () => Promise<void> }) 
   const hasEle = route.points.some((p) => p.ele !== null)
   const shot = photos.flatMap((p) => (p.takenAt === null ? [] : [p.takenAt]))
   const photoSpan = stats && !stats.durationMs && shot.length > 0
+  const shotFrom = shot.length ? formatTime(Math.min(...shot)) : ''
+  const shotTo = shot.length ? formatTime(Math.max(...shot)) : ''
   const gaps = useMemo(() => routeSections(route).slice(1).map(([p]) => p!.distanceM), [route])
 
   const menuAction = (fn: () => void) => () => {
@@ -270,7 +272,7 @@ function Journal({ data, reload }: { data: Data; reload: () => Promise<void> }) 
 
         {photoSpan && (
           <p className={s.date}>
-            照片拍攝於 {formatTime(Math.min(...shot))} 到 {formatTime(Math.max(...shot))}
+            照片拍攝於 {shotFrom === shotTo ? shotFrom : `${shotFrom} 到 ${shotTo}`}
           </p>
         )}
 

@@ -1,7 +1,11 @@
-import type { NearestOnRoute, Photo, Placement, PoiOnRoute, Route, TimelineItem } from '../types'
-import { nearestOnRoute, routeCandidates, sampleAtDistance, sampleAtTime } from './route'
+import type { NearestOnRoute, Photo, Placement, PoiOnRoute, Route, RouteSample, TimelineItem } from '../types'
+import { distanceM, nearestOnRoute, sampleAtDistance, sampleAtTime } from './route'
 
 export const SNAP_TO_ROUTE_M = 150
+
+export const ORDER_STEP_M = 10
+
+export const MAX_ORDER_SAMPLES = 20_000
 
 export function placePhotos(photos: Photo[], route: Route): Placement[] {
   const byTime = (photo: Photo): Placement | null => {
@@ -21,54 +25,78 @@ export function placePhotos(photos: Photo[], route: Route): Placement[] {
     const on = hit && hit.offsetM <= SNAP_TO_ROUTE_M ? sampleAtDistance(route, hit.routeDistanceM) : null
     const routeDistanceM = hit?.routeDistanceM ?? 0
 
-    if (on) return { source: 'exif', lat: on.lat, lon: on.lon, ele: on.ele ?? gps.ele, routeDistanceM }
+    if (on) return { source: 'exif', lat: on.lat, lon: on.lon, ele: on.ele ?? gps.ele, routeDistanceM, onRoute: true }
     return { source: 'exif', lat: gps.lat, lon: gps.lon, ele: gps.ele, routeDistanceM }
   })
 }
 
 function alongRoute(route: Route, photos: Photo[]): Map<Photo, NearestOnRoute> {
   const out = new Map<Photo, NearestOnRoute>()
+  const nearest = new Map<Photo, NearestOnRoute>()
 
   for (const p of photos) {
-    const hit = p.takenAt === null ? nearestOnRoute(route, p.gps!) : null
-    if (hit) out.set(p, hit)
+    const hit = nearestOnRoute(route, p.gps!)
+    if (hit) nearest.set(p, hit)
+    if (hit && (p.takenAt === null || route.source !== 'gpx')) out.set(p, hit)
   }
 
-  const timed = photos.filter((p) => p.takenAt !== null).sort((a, b) => a.takenAt! - b.takenAt!)
+  const timed = photos
+    .filter((p) => p.takenAt !== null && !out.has(p) && nearest.has(p))
+    .sort((a, b) => a.takenAt! - b.takenAt! || nearest.get(a)!.routeDistanceM - nearest.get(b)!.routeDistanceM)
 
-  // ponytail: candidates are only the local minima of each photo's offset along the route (plus the route end), so an order-constrained photo jumps to the next such minimum instead of the exact boundary point; O(photos × points) like nearestOnRoute. Add the previous photo's position as a candidate if that ever matters.
-  const options = timed.map((p) => routeCandidates(route, p.gps!))
-  if (!options[0]?.length) return out
+  if (timed.length === 0) return out
 
-  const cost: number[][] = []
-  const from: number[][] = []
+  const step = Math.max(ORDER_STEP_M, route.totalDistanceM / MAX_ORDER_SAMPLES)
+  const at: RouteSample[] = []
 
-  for (const [i, here] of options.entries()) {
-    const prev = options[i - 1] ?? []
-    let best = i === 0 ? 0 : Infinity
-    let arg = -1
-    let m = 0
+  for (let d = 0; d < route.totalDistanceM; d += step) at.push(sampleAtDistance(route, d)!)
+  at.push(sampleAtDistance(route, route.totalDistanceM)!)
 
-    from[i] = []
-    cost[i] = here.map((c, k) => {
-      for (; m < prev.length && prev[m]!.routeDistanceM <= c.routeDistanceM; m++) {
-        if (cost[i - 1]![m]! < best) {
-          best = cost[i - 1]![m]!
-          arg = m
-        }
+  // ponytail: positions are the route sampled every ORDER_STEP_M (coarser past MAX_ORDER_SAMPLES), with flat-plane offsets, so an ordered photo lands within half a step of its best spot unless its own nearest point already fits the order; O(photos × samples) time and Uint16 back pointers per photo.
+  const lat = Float64Array.from(at, (a) => a.lat)
+  const lon = Float64Array.from(at, (a) => a.lon)
+  let cost = new Float64Array(at.length)
+  const from: Uint16Array[] = []
+
+  for (const p of timed) {
+    const next = new Float64Array(at.length)
+    const back = new Uint16Array(at.length)
+    const { lat: y, lon: x } = p.gps!
+    const kx = Math.cos((y * Math.PI) / 180)
+    let best = Infinity
+    let arg = 0
+
+    for (let k = 0; k < at.length; k++) {
+      if (cost[k]! < best) {
+        best = cost[k]!
+        arg = k
       }
 
-      from[i]![k] = arg
-      return best + c.offsetM
-    })
+      back[k] = arg
+      next[k] = best + Math.hypot((lon[k]! - x) * kx, lat[k]! - y)
+    }
+
+    cost = next
+    from.push(back)
   }
 
-  const last = cost.at(-1)!
-  let k = last.indexOf(Math.min(...last))
+  const chosen: number[] = []
+  let k = cost.indexOf(Math.min(...cost))
 
-  for (let i = options.length - 1; i >= 0; i--) {
-    out.set(timed[i]!, options[i]![k]!)
+  for (let i = timed.length - 1; i >= 0; i--) {
+    chosen[i] = at[k]!.distanceM
     k = from[i]![k]!
+  }
+
+  let lo = 0
+
+  for (const [i, p] of timed.entries()) {
+    const own = nearest.get(p)!
+    const hi = chosen[i + 1] ?? Infinity
+    const d = own.routeDistanceM >= lo && own.routeDistanceM <= hi ? own.routeDistanceM : chosen[i]!
+
+    out.set(p, d === own.routeDistanceM ? own : { routeDistanceM: d, offsetM: distanceM(p.gps!, sampleAtDistance(route, d)!) })
+    lo = d
   }
 
   return out

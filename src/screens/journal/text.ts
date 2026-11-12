@@ -1,4 +1,5 @@
 import type { Photo, PlacementSource, PoiKind } from '../../types'
+import { SNAP_TO_ROUTE_M } from '../../core'
 import { formatTime } from '../../ui'
 
 export const POI_KIND: Record<PoiKind, string> = {
@@ -17,14 +18,13 @@ export const POI_KIND: Record<PoiKind, string> = {
 
 const PLACEMENT: Record<PlacementSource, string> = {
   track: '依拍攝時間放上路線',
-  exif: '照片自己的定位',
+  exif: '依照片的位置放上路線',
   none: '無法放到路線上',
 }
 
 export function placementLabel(photo: Photo): string {
   const p = photo.placement
-  const snapped = p.source === 'exif' && (p.lat !== photo.gps?.lat || p.lon !== photo.gps?.lon)
-  return snapped ? '依照片的定位放上路線' : PLACEMENT[p.source]
+  return p.source === 'exif' && !p.onRoute ? `依照片的位置，離路線超過 ${SNAP_TO_ROUTE_M} 公尺` : PLACEMENT[p.source]
 }
 
 export function photoAlt(photo: Photo): string {

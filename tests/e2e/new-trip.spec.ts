@@ -128,8 +128,9 @@ test('photos from another day than the GPX: the GPX time is not used, the photo 
   await expect(page.getByText(/10 月 2 日/)).toBeVisible()
 
   await photoInput(page).setInputFiles(PHOTOS)
-  await expect(page.getByText('這個 GPX 檔的時間不是實際記錄的，會改用照片的時間來排列。')).toBeVisible()
+  await expect(page.getByText('這個 GPX 檔的時間和照片的拍攝時間對不上，會改用照片的時間來排列。')).toBeVisible()
   await expect(page.getByText(/10 月 2 日/)).toHaveCount(0)
+  await expect(page.getByText('照片會依自己的位置資訊放到路線上，沒有位置資訊的照片放不上去。')).toBeVisible()
   await expect(page.getByLabel('這趟的名字')).toHaveValue('合歡北峰')
   await page.getByRole('button', { name: '建立回憶' }).click()
 
@@ -142,7 +143,21 @@ test('photos from another day than the GPX: the GPX time is not used, the photo 
   await expect(page.getByText('時間', { exact: true })).toHaveCount(0)
 
   await page.locator('ol').getByRole('button', { name: /^打開照片/ }).first().click()
-  await expect(page.getByRole('dialog', { name: '照片' }).getByText('在路線上的位置：依照片的定位放上路線')).toBeVisible()
+  await expect(page.getByRole('dialog', { name: '照片' }).getByText('在路線上的位置：依照片的位置放上路線')).toBeVisible()
+})
+
+test('one photo with a GPX from another day shows its single time', async ({ page }) => {
+  const other = readFileSync(fixture('hehuan-north.gpx'), 'utf8').replaceAll('2026-11-06', '2026-10-01').replaceAll('2026-11-07', '2026-10-02')
+
+  await page.goto('./#/new')
+  await gpxInput(page).setInputFiles({ name: 'other-day.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(other) })
+  await photoInput(page).setInputFiles(PHOTOS.slice(0, 1))
+  await expect(page.getByText('這個 GPX 檔的時間和照片的拍攝時間對不上，會改用照片的時間來排列。')).toBeVisible()
+  await page.getByRole('button', { name: '建立回憶' }).click()
+
+  await expect(page.getByText('依照片的位置放上路線')).toBeVisible()
+  await page.getByRole('button', { name: '看這趟日誌' }).click()
+  await expect(page.getByText('照片拍攝於 07:20', { exact: true })).toBeVisible()
 })
 
 test('most photos outside the GPX time are flagged but still added', async ({ page }) => {
@@ -155,7 +170,7 @@ test('most photos outside the GPX time are flagged but still added', async ({ pa
   await gpxInput(page).setInputFiles({ name: 'later.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(later) })
   await photoInput(page).setInputFiles(PHOTOS)
   await expect(page.getByText('已選 4 張照片')).toBeVisible()
-  await expect(page.getByText('這個 GPX 檔的時間不是實際記錄的', { exact: false })).toHaveCount(0)
+  await expect(page.getByText('這個 GPX 檔的時間和照片的拍攝時間對不上', { exact: false })).toHaveCount(0)
   await page.getByRole('button', { name: '建立回憶' }).click()
 
   await expect(page.getByText('照片的時間和這條路線對不上')).toBeVisible()

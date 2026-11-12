@@ -348,7 +348,7 @@ test('a newer database version opened in another tab is not blocked, and this ta
   const opened = await other.evaluate(
     () =>
       new Promise<string>((resolve) => {
-        const req = indexedDB.open('hiking-memories', 3)
+        const req = indexedDB.open('hiking-memories', 4)
         req.onblocked = () => resolve('blocked')
         req.onsuccess = () => {
           req.result.close()

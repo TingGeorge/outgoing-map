@@ -17,7 +17,7 @@ import type {
 import { renderImage } from './image'
 
 const DB_NAME = 'hiking-memories'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 const EXPORT_FORMAT = 'hiking-memories-trip'
 const EXPORT_VERSION = 1
@@ -110,10 +110,10 @@ function db(): Promise<IDBPDatabase<Schema>> {
         db.createObjectStore('blobs', { keyPath: ['photoId', 'size'] })
       }
 
-      if (oldVersion === 1) {
+      if (oldVersion === 1 || oldVersion === 2) {
         const write = tx as unknown as WriteTx
         void write.objectStore('trips').getAllKeys().then(async (ids) => {
-          for (const id of ids) await refresh(write, id)
+          for (const id of ids) await refresh(write, id, false).catch(() => {})
         })
       }
     },
@@ -181,7 +181,7 @@ function byTime(a: Photo, b: Photo): number {
   return a.fileName.localeCompare(b.fileName) || a.id.localeCompare(b.id)
 }
 
-async function refresh(tx: WriteTx, tripId: Id): Promise<Trip> {
+async function refresh(tx: WriteTx, tripId: Id, touch = true): Promise<Trip> {
   const trip = await tx.objectStore('trips').get(tripId)
   if (!trip) throw new Error(MSG.noTrip)
 
@@ -208,7 +208,7 @@ async function refresh(tx: WriteTx, tripId: Id): Promise<Trip> {
     endAt: route.endAt ?? (times.length ? Math.max(...times) : null),
     photoCount: photos.length,
     coverPhotoId: keepCover ? trip.coverPhotoId : (photos[0]?.id ?? null),
-    updatedAt: Date.now(),
+    updatedAt: touch ? Date.now() : trip.updatedAt,
   }
 
   await tx.objectStore('trips').put(next)

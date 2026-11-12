@@ -141,7 +141,7 @@ function ResultView({ summary, onOpen }: { summary: Summary; onOpen: () => void 
                 <dd>{byTime}</dd>
               </div>
               <div>
-                <dt>依照片自己的位置</dt>
+                <dt>依照片的位置放上路線</dt>
                 <dd>{byPhoto}</dd>
               </div>
               <div>
@@ -459,7 +459,7 @@ export function NewTripScreen() {
           </Card>
         )}
 
-        {madeUpTime && <Notice tone="info">這個 GPX 檔的時間不是實際記錄的，會改用照片的時間來排列。</Notice>}
+        {madeUpTime && <Notice tone="info">這個 GPX 檔的時間和照片的拍攝時間對不上，會改用照片的時間來排列。</Notice>}
 
         {gpxError && (
           <Notice tone="error" title="這個檔案不能用">
@@ -472,7 +472,11 @@ export function NewTripScreen() {
         <SectionTitle>照片</SectionTitle>
 
         <Card radius="md" className={s.picked}>
-          <p className={s.hint}>照片會依拍攝時間放到路線上，所以沒有位置資訊的照片，有 GPX 也放得上去。</p>
+          <p className={s.hint}>
+            {gpx && (madeUpTime || gpx.startAt === null)
+              ? '照片會依自己的位置資訊放到路線上，沒有位置資訊的照片放不上去。'
+              : '照片會依拍攝時間放到路線上，所以沒有位置資訊的照片，有 GPX 也放得上去。'}
+          </p>
           {photos.length > 0 && (
             <p className={s.count} aria-live="polite">
               已選 {photos.length} 張照片
