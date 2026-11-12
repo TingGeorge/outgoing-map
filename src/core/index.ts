@@ -13,6 +13,7 @@ export {
   routeStats,
   sampleAtDistance,
   sampleAtTime,
+  trackTimeTrusted,
 } from './route'
 
-export { buildTimeline, placePhotos } from './timeline'
+export { SNAP_TO_ROUTE_M, buildTimeline, placePhotos } from './timeline'

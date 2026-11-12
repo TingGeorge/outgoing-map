@@ -195,7 +195,7 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
           distanceRef.current.dataset.distanceM = String(steps.distanceM)
         }
 
-        const minute = hasTime ? steps.minute : NaN
+        const minute = hasTime || !Number.isNaN(shownTime) ? steps.minute : NaN
         if (!Object.is(minute, last.minute) && clockRef.current) {
           last.minute = minute
           clockRef.current.textContent = Number.isNaN(minute) ? '' : formatTime(minute)

@@ -363,7 +363,7 @@ export function WelcomeScreen() {
         <h1 className={s.title} ref={heading} tabIndex={-1}>
           都準備好了
         </h1>
-        <p className={s.body}>地圖的鑰匙已經收好。接下來放進你的登山照片，就能把這一趟變成一本日誌。</p>
+        <p className={s.body}>地圖的鑰匙已經收好。接下來放進你的登山照片，就能把這一趟變成一本日誌。用登山 App 當天實際記錄的 GPX 檔最完整，網路下載或自己畫的路線沒有你走的時間。</p>
       </div>
       <PrivacyNote />
     </Screen>

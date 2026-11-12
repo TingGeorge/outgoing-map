@@ -1,9 +1,9 @@
 import exifr from 'exifr'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { buildRoute, exifTimeToEpoch, parseGpx } from '../../core'
+import { buildRoute, exifTimeToEpoch, parseGpx, trackTimeTrusted } from '../../core'
 import { goBack, guardBack, navigate } from '../../router'
 import { addPhotos, createTrip, deleteTrip, getTrip, listPhotos, saveTrack } from '../../storage'
-import { PHOTO_TIME_TOLERANCE_MS, type Id, type PhotoImportFailure, type TrackPoint } from '../../types'
+import { PHOTO_TIME_TOLERANCE_MS, type Id, type PhotoImportFailure, type Route, type TrackPoint } from '../../types'
 import {
   BackIcon,
   Button,
@@ -31,6 +31,7 @@ interface GpxPick {
   fileName: string
   name: string | null
   points: TrackPoint[]
+  route: Route
   startAt: number | null
   endAt: number | null
   distanceM: number
@@ -71,8 +72,8 @@ function dayName(startMs: number, endMs: number | null): string {
 
 const spansDays = (g: GpxPick) => g.startAt !== null && g.endAt !== null && dayOf(g.startAt) !== dayOf(g.endAt)
 
-// ponytail: reads EXIF of at most 60 picked files just to suggest a title; a bigger batch only uses the first 60.
-async function earliestPhotoTime(files: File[]): Promise<number | null> {
+// ponytail: reads EXIF of at most 60 picked files to suggest a title and spot a GPX with made-up times; a bigger batch only uses the first 60 (storage decides with every photo).
+async function photoTimes(files: File[]): Promise<number[]> {
   const text = (v: unknown) => (typeof v === 'string' ? v : null)
 
   const times = await Promise.all(
@@ -86,8 +87,7 @@ async function earliestPhotoTime(files: File[]): Promise<number | null> {
     }),
   )
 
-  const known = times.filter((t): t is number => t !== null)
-  return known.length ? Math.min(...known) : null
+  return times.filter((t): t is number => t !== null)
 }
 
 function errorMessage(error: unknown): string {
@@ -171,7 +171,7 @@ export function NewTripScreen() {
   const [gpx, setGpx] = useState<GpxPick | null>(null)
   const [gpxError, setGpxError] = useState<string | null>(null)
   const [photos, setPhotos] = useState<File[]>([])
-  const [photoDay, setPhotoDay] = useState<number | null>(null)
+  const [shotTimes, setShotTimes] = useState<number[]>([])
   const [title, setTitle] = useState('')
   const [titleEdited, setTitleEdited] = useState(false)
   const [formError, setFormError] = useState<{ message: string; failed: PhotoImportFailure[] } | null>(null)
@@ -185,19 +185,23 @@ export function NewTripScreen() {
   useEffect(() => {
     let cancelled = false
 
-    setPhotoDay(null)
-    if (photos.length) earliestPhotoTime(photos).then((t) => !cancelled && setPhotoDay(t))
+    setShotTimes([])
+    if (photos.length) photoTimes(photos).then((t) => !cancelled && setShotTimes(t))
 
     return () => {
       cancelled = true
     }
   }, [photos])
 
+  const photoDay = shotTimes.length ? Math.min(...shotTimes) : null
+  const madeUpTime = gpx !== null && !trackTimeTrusted(gpx.route, shotTimes)
+  const gpxTime = madeUpTime ? null : (gpx?.startAt ?? null)
+
   const suggested = useMemo(() => {
     if (gpx?.name?.trim()) return clip(gpx.name.trim())
-    if (gpx?.startAt != null) return `${dayName(gpx.startAt, gpx.endAt)}的山`
+    if (gpxTime !== null) return `${dayName(gpxTime, gpx!.endAt)}的山`
     return `${dayOf(photoDay ?? today)}的山`
-  }, [gpx, photoDay, today])
+  }, [gpx, gpxTime, photoDay, today])
 
   const shownTitle = titleEdited ? title : suggested
 
@@ -221,6 +225,7 @@ export function NewTripScreen() {
         fileName: file.name,
         name: parsed.name,
         points: parsed.points,
+        route,
         startAt: route.startAt,
         endAt: route.endAt,
         distanceM: route.totalDistanceM,
@@ -309,7 +314,7 @@ export function NewTripScreen() {
       const end = gpx?.endAt ?? null
 
       const outside =
-        start !== null && end !== null
+        start !== null && end !== null && trackTimeTrusted(gpx!.route, withTime.map((p) => p.takenAt!))
           ? withTime.filter((p) => p.takenAt! < start - PHOTO_TIME_TOLERANCE_MS || p.takenAt! > end + PHOTO_TIME_TOLERANCE_MS)
           : []
 
@@ -418,7 +423,7 @@ export function NewTripScreen() {
             </div>
             <ul className={s.facts}>
               <li>{gpx.points.length} 個定位點</li>
-              {gpx.startAt !== null && (
+              {gpx.startAt !== null && !madeUpTime && (
                 spansDays(gpx) ? (
                   <>
                     <li>{formatDateRange(gpx.startAt, gpx.endAt, true)}</li>
@@ -453,6 +458,8 @@ export function NewTripScreen() {
             </FilePicker>
           </Card>
         )}
+
+        {madeUpTime && <Notice tone="info">這個 GPX 檔的時間不是實際記錄的，會改用照片的時間來排列。</Notice>}
 
         {gpxError && (
           <Notice tone="error" title="這個檔案不能用">

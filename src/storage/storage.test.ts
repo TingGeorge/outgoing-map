@@ -526,12 +526,76 @@ describe('two tabs', () => {
   test('a newer version in another tab is not blocked, and this tab is told to reload', async () => {
     await storage.listTrips()
 
-    const newer = await openDB('hiking-memories', 2)
+    const newer = await openDB('hiking-memories', 3)
     newer.close()
 
     await expect(storage.listTrips()).rejects.toThrow('請重新整理這個頁面')
 
     await deleteDB('hiking-memories')
     expect(await storage.listTrips()).toEqual([])
+  })
+})
+
+describe('upgrade from version 1', () => {
+  test('saved trips are recomputed once, so a drawn GPX with made-up times uses the photo times', async () => {
+    await deleteDB('hiking-memories')
+
+    const fake = Date.UTC(2022, 11, 28, 6)
+    const day = Date.UTC(2023, 0, 8, 1)
+    const out = Array.from({ length: 21 }, (_, i) => ({ lat: 24, lon: 121 + i * 0.001 }))
+    const back = Array.from({ length: 21 }, (_, i) => ({ lat: 24.0003, lon: 121.02 - i * 0.001 }))
+    const points = [...out, ...back].map((p, i) => ({ ...p, ele: 1000, time: fake + i * 2 * 60_000 }))
+
+    const photo = (id: string, takenAt: number, lat: number) => ({
+      id,
+      tripId: 'old',
+      fileName: `${id}.jpg`,
+      takenAt,
+      gps: { lat, lon: 121, ele: null, heading: null },
+      caption: '',
+      width: 1,
+      height: 1,
+      placement: { source: 'exif', lat, lon: 121, ele: null, routeDistanceM: 0 },
+      sourceKey: id,
+    })
+
+    const v1 = await openDB('hiking-memories', 1, {
+      upgrade(db) {
+        db.createObjectStore('trips', { keyPath: 'id' })
+        db.createObjectStore('tracks', { keyPath: 'tripId' })
+        const photos = db.createObjectStore('photos', { keyPath: 'id' })
+        photos.createIndex('tripId', 'tripId')
+        photos.createIndex('source', ['tripId', 'sourceKey'])
+        db.createObjectStore('blobs', { keyPath: ['photoId', 'size'] })
+      },
+    })
+
+    await v1.put('trips', {
+      id: 'old',
+      title: '日湯真山',
+      startAt: fake,
+      endAt: points.at(-1)!.time,
+      diary: '',
+      hasTrack: true,
+      stats: { distanceM: 4000, ascentM: 0, descentM: 0, durationMs: 82 * 60_000, maxEleM: 1000, minEleM: 1000 },
+      coverPhotoId: 'a',
+      photoCount: 2,
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    await v1.put('tracks', { tripId: 'old', points })
+    await v1.put('photos', photo('a', day, 24.00005))
+    await v1.put('photos', photo('b', day + 4 * 3_600_000, 24.00025))
+    v1.close()
+
+    const trip = (await storage.getTrip('old'))!
+    const [early, late] = await storage.listPhotos('old')
+
+    expect(trip.startAt).toBe(day)
+    expect(trip.endAt).toBe(day + 4 * 3_600_000)
+    expect(trip.stats!.durationMs).toBeNull()
+    expect(early!.placement).toMatchObject({ source: 'exif', lat: 24, routeDistanceM: expect.closeTo(0, 0) })
+    expect(late!.placement).toMatchObject({ source: 'exif', lat: 24.0003 })
+    expect(late!.placement.source === 'exif' && late!.placement.routeDistanceM).toBeCloseTo(trip.stats!.distanceM, 0)
   })
 })

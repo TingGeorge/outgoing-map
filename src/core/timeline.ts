@@ -1,24 +1,77 @@
-import type { Photo, Placement, PoiOnRoute, Route, TimelineItem } from '../types'
-import { nearestOnRoute, sampleAtDistance, sampleAtTime } from './route'
+import type { NearestOnRoute, Photo, Placement, PoiOnRoute, Route, TimelineItem } from '../types'
+import { nearestOnRoute, routeCandidates, sampleAtDistance, sampleAtTime } from './route'
+
+export const SNAP_TO_ROUTE_M = 150
 
 export function placePhotos(photos: Photo[], route: Route): Placement[] {
-  return photos.map((photo) => {
-    const byTime = (): Placement | null => {
-      const s = photo.takenAt === null ? null : sampleAtTime(route, photo.takenAt)
-      return s && { source: 'track', lat: s.lat, lon: s.lon, ele: s.ele ?? photo.gps?.ele ?? null, routeDistanceM: s.distanceM }
-    }
+  const byTime = (photo: Photo): Placement | null => {
+    const s = photo.takenAt === null ? null : sampleAtTime(route, photo.takenAt)
+    return s && { source: 'track', lat: s.lat, lon: s.lon, ele: s.ele ?? photo.gps?.ele ?? null, routeDistanceM: s.distanceM }
+  }
 
-    const byGps = (): Placement | null => {
-      const gps = photo.gps
-      if (!gps) return null
+  const timed = photos.map((p) => (route.source === 'gpx' || !p.gps ? byTime(p) : null))
+  const near = alongRoute(route, photos.filter((p, i) => !timed[i] && p.gps))
 
-      const routeDistanceM = nearestOnRoute(route, gps)?.routeDistanceM ?? 0
-      return { source: 'exif', lat: gps.lat, lon: gps.lon, ele: gps.ele, routeDistanceM }
-    }
+  return photos.map((photo, i) => {
+    const gps = photo.gps
+    if (timed[i]) return timed[i]
+    if (!gps) return { source: 'none' }
 
-    const placement = route.source === 'gpx' ? (byTime() ?? byGps()) : (byGps() ?? byTime())
-    return placement ?? { source: 'none' }
+    const hit = near.get(photo)
+    const on = hit && hit.offsetM <= SNAP_TO_ROUTE_M ? sampleAtDistance(route, hit.routeDistanceM) : null
+    const routeDistanceM = hit?.routeDistanceM ?? 0
+
+    if (on) return { source: 'exif', lat: on.lat, lon: on.lon, ele: on.ele ?? gps.ele, routeDistanceM }
+    return { source: 'exif', lat: gps.lat, lon: gps.lon, ele: gps.ele, routeDistanceM }
   })
+}
+
+function alongRoute(route: Route, photos: Photo[]): Map<Photo, NearestOnRoute> {
+  const out = new Map<Photo, NearestOnRoute>()
+
+  for (const p of photos) {
+    const hit = p.takenAt === null ? nearestOnRoute(route, p.gps!) : null
+    if (hit) out.set(p, hit)
+  }
+
+  const timed = photos.filter((p) => p.takenAt !== null).sort((a, b) => a.takenAt! - b.takenAt!)
+
+  // ponytail: candidates are only the local minima of each photo's offset along the route (plus the route end), so an order-constrained photo jumps to the next such minimum instead of the exact boundary point; O(photos × points) like nearestOnRoute. Add the previous photo's position as a candidate if that ever matters.
+  const options = timed.map((p) => routeCandidates(route, p.gps!))
+  if (!options[0]?.length) return out
+
+  const cost: number[][] = []
+  const from: number[][] = []
+
+  for (const [i, here] of options.entries()) {
+    const prev = options[i - 1] ?? []
+    let best = i === 0 ? 0 : Infinity
+    let arg = -1
+    let m = 0
+
+    from[i] = []
+    cost[i] = here.map((c, k) => {
+      for (; m < prev.length && prev[m]!.routeDistanceM <= c.routeDistanceM; m++) {
+        if (cost[i - 1]![m]! < best) {
+          best = cost[i - 1]![m]!
+          arg = m
+        }
+      }
+
+      from[i]![k] = arg
+      return best + c.offsetM
+    })
+  }
+
+  const last = cost.at(-1)!
+  let k = last.indexOf(Math.min(...last))
+
+  for (let i = options.length - 1; i >= 0; i--) {
+    out.set(timed[i]!, options[i]![k]!)
+    k = from[i]![k]!
+  }
+
+  return out
 }
 
 const RANK = { start: 0, poi: 1, photo: 2, end: 3 } as const

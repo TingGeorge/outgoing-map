@@ -17,7 +17,7 @@ import type {
 import { renderImage } from './image'
 
 const DB_NAME = 'hiking-memories'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 const EXPORT_FORMAT = 'hiking-memories-trip'
 const EXPORT_VERSION = 1
@@ -98,7 +98,7 @@ let connection: Promise<IDBPDatabase<Schema>> | null = null
 
 function db(): Promise<IDBPDatabase<Schema>> {
   connection ??= openDB<Schema>(DB_NAME, DB_VERSION, {
-    upgrade(db, oldVersion) {
+    upgrade(db, oldVersion, _newVersion, tx) {
       if (oldVersion < 1) {
         db.createObjectStore('trips', { keyPath: 'id' })
         db.createObjectStore('tracks', { keyPath: 'tripId' })
@@ -108,6 +108,13 @@ function db(): Promise<IDBPDatabase<Schema>> {
         photos.createIndex('source', ['tripId', 'sourceKey'])
 
         db.createObjectStore('blobs', { keyPath: ['photoId', 'size'] })
+      }
+
+      if (oldVersion === 1) {
+        const write = tx as unknown as WriteTx
+        void write.objectStore('trips').getAllKeys().then(async (ids) => {
+          for (const id of ids) await refresh(write, id)
+        })
       }
     },
 

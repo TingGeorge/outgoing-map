@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, test } from 'vitest'
 import type { Photo, PhotoGps, Poi, PoiOnRoute, TrackPoint } from '../types'
-import { buildRoute, buildTimeline, parseGpx, placePhotos } from './index'
+import { SNAP_TO_ROUTE_M, buildRoute, buildTimeline, nearestOnRoute, parseGpx, placePhotos, routeStats } from './index'
 
 const t0 = 1_700_000_000_000
 const MIN = 60_000
@@ -64,7 +64,7 @@ describe('placePhotos', () => {
     expect(lost).toEqual({ source: 'none' })
     expect(late).toEqual({ source: 'none' })
 
-    expect(lateWithGps).toMatchObject({ source: 'exif', lat: 24.001, lon: 121.01, ele: 3000 })
+    expect(lateWithGps).toMatchObject({ source: 'exif', lat: 24, lon: 121.01, ele: 1100 })
     expect(lateWithGps!.source === 'exif' && lateWithGps!.routeDistanceM / total).toBeCloseTo(0.5, 3)
 
     expect(slightlyLate).toMatchObject({ source: 'track', routeDistanceM: total, lon: 121.02 })
@@ -126,6 +126,83 @@ describe('placePhotos', () => {
       { source: 'exif', lat: 24, lon: 121, ele: null, routeDistanceM: 0 },
       { source: 'none' },
     ])
+  })
+})
+
+describe('a drawn GPX with made-up times', () => {
+  const fake = Date.UTC(2022, 11, 28, 6)
+  const day = Date.UTC(2023, 0, 8)
+  const HOUR = 60 * MIN
+
+  const loop = () => {
+    const out = Array.from({ length: 21 }, (_, i) => ({ lat: 24, lon: 121 + i * 0.001 }))
+    const back = Array.from({ length: 21 }, (_, i) => ({ lat: 24.0003, lon: 121.02 - i * 0.001 }))
+    return [...out, ...back].map((p, i) => tp(p.lon, 1000 + i, fake + i * 2 * MIN, p.lat))
+  }
+
+  const shots = () => [
+    photo({ fileName: 'trailhead', takenAt: day + 1 * HOUR, gps: gps(121, 24.00005) }),
+    photo({ fileName: 'out', takenAt: day + 2 * HOUR, gps: gps(121.005, 24.0002) }),
+    photo({ fileName: 'turn', takenAt: day + 3 * HOUR, gps: gps(121.02, 24.00015) }),
+    photo({ fileName: 'back', takenAt: day + 4 * HOUR, gps: gps(121.005, 24.0001) }),
+    photo({ fileName: 'home', takenAt: day + 5 * HOUR, gps: gps(121, 24.00025) }),
+  ]
+
+  test('photos from another day make the route untimed, like a GPX without time', () => {
+    const route = buildRoute(loop(), shots())
+    const untimed = buildRoute(loop().map((p) => ({ ...p, time: null })), [])
+
+    expect(route).toEqual(untimed)
+    expect(route.startAt).toBeNull()
+    expect(routeStats(route).durationMs).toBeNull()
+  })
+
+  test('one photo inside the track time keeps the track time and its time placement', () => {
+    const inside = photo({ takenAt: fake + 30 * MIN, gps: gps(121.019, 24.0003) })
+    const route = buildRoute(loop(), [...shots(), inside])
+
+    expect(route).toEqual(buildRoute(loop(), []))
+    expect(placePhotos([inside], route)).toEqual(placePhotos([inside], buildRoute(loop(), [])))
+    expect(placePhotos([inside], route)[0]).toMatchObject({ source: 'track' })
+  })
+
+  test('photos without time leave the track time alone', () => {
+    const route = buildRoute(loop(), [photo({ gps: gps(121.005) })])
+    expect(route).toEqual(buildRoute(loop(), []))
+  })
+
+  test('GPS placement follows capture time on a loop', () => {
+    const photos = shots()
+    const route = buildRoute(loop(), photos)
+    const at = placePhotos(photos, route).map((p) => (p.source === 'none' ? NaN : p.routeDistanceM))
+    const total = route.totalDistanceM
+
+    expect(nearestOnRoute(route, photos[1]!.gps!)!.routeDistanceM).toBeGreaterThan(total / 2)
+    expect(nearestOnRoute(route, photos[3]!.gps!)!.routeDistanceM).toBeLessThan(total / 2)
+
+    expect(at).toEqual([...at].sort((a, b) => a - b))
+    expect(at[0]).toBeLessThan(10)
+    expect(at[1]).toBeLessThan(total / 2)
+    expect(at[3]).toBeGreaterThan(total / 2)
+    expect(at[4]).toBeGreaterThan(total - 10)
+  })
+
+  test('a GPS photo without time still goes to the nearest point', () => {
+    const photos = [...shots(), photo({ gps: gps(121.005, 24.0002) })]
+    const route = buildRoute(loop(), photos)
+    const last = placePhotos(photos, route).at(-1)!
+
+    expect(last.source === 'exif' && last.routeDistanceM).toBeCloseTo(nearestOnRoute(route, photos.at(-1)!.gps!)!.routeDistanceM, 6)
+  })
+
+  test(`pins snap onto the route within ${SNAP_TO_ROUTE_M} m and keep their own place beyond`, () => {
+    const route = buildRoute(loop(), [])
+    const [close, far] = placePhotos([photo({ gps: gps(121.01, 23.9988, 5) }), photo({ gps: gps(121.01, 23.9985, 5) })], route)
+    const corner = route.points[10]!
+
+    expect(close).toMatchObject({ source: 'exif', lat: 24, ele: 1010 })
+    expect(close!.source === 'exif' && close!.lon).toBeCloseTo(121.01, 6)
+    expect(far).toEqual({ source: 'exif', lat: 23.9985, lon: 121.01, ele: 5, routeDistanceM: expect.closeTo(corner.distanceM, 3) })
   })
 })
 

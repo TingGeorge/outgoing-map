@@ -28,6 +28,7 @@ import {
   formatDuration,
   formatKm,
   formatMetres,
+  formatTime,
   toast,
 } from '../../ui'
 import { useTripActions } from './actions'
@@ -182,6 +183,8 @@ function Journal({ data, reload }: { data: Data; reload: () => Promise<void> }) 
   const hasMap = route.points.length > 0
   const stats = trip.stats
   const hasEle = route.points.some((p) => p.ele !== null)
+  const shot = photos.flatMap((p) => (p.takenAt === null ? [] : [p.takenAt]))
+  const photoSpan = stats && !stats.durationMs && shot.length > 0
   const gaps = useMemo(() => routeSections(route).slice(1).map(([p]) => p!.distanceM), [route])
 
   const menuAction = (fn: () => void) => () => {
@@ -259,8 +262,16 @@ function Journal({ data, reload }: { data: Data; reload: () => Promise<void> }) 
           <div className={s.stats}>
             <StatTile label="距離" value={formatKm(stats.distanceM)} unit="公里" />
             <StatTile label="爬升" value={hasEle ? formatMetres(stats.ascentM) : '—'} unit={hasEle ? '公尺' : undefined} />
-            <StatTile label="時間" value={stats.durationMs ? formatDuration(stats.durationMs) : '—'} unit={stats.durationMs ? '小時' : undefined} />
+            {!photoSpan && (
+              <StatTile label="時間" value={stats.durationMs ? formatDuration(stats.durationMs) : '—'} unit={stats.durationMs ? '小時' : undefined} />
+            )}
           </div>
+        )}
+
+        {photoSpan && (
+          <p className={s.date}>
+            照片拍攝於 {formatTime(Math.min(...shot))} 到 {formatTime(Math.max(...shot))}
+          </p>
         )}
 
         {route.source === 'photos' && hasMap && (

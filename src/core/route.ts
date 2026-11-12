@@ -83,7 +83,12 @@ function sum(meters: number[], start: number, end: number): number {
 }
 
 export function buildRoute(track: TrackPoint[] | null, photos: Photo[]): Route {
-  if (track && track.length > 0) return toRoute('gpx', inTimeOrder(track))
+  if (track && track.length > 0) {
+    const route = toRoute('gpx', inTimeOrder(track))
+    const shot = photos.flatMap((p) => (p.takenAt === null ? [] : [p.takenAt]))
+
+    return trackTimeTrusted(route, shot) ? route : toRoute('gpx', track.map((p) => ({ ...p, time: null })))
+  }
 
   const points = photos
     .filter((p) => p.gps && p.takenAt !== null)
@@ -91,6 +96,10 @@ export function buildRoute(track: TrackPoint[] | null, photos: Photo[]): Route {
     .map((p) => ({ lat: p.gps!.lat, lon: p.gps!.lon, ele: p.gps!.ele, time: p.takenAt }))
 
   return toRoute('photos', points)
+}
+
+export function trackTimeTrusted(route: Route, photoTimes: EpochMs[]): boolean {
+  return route.startAt === null || photoTimes.length === 0 || photoTimes.some((t) => sampleAtTime(route, t) !== null)
 }
 
 function toRoute(source: RouteSource, track: TrackPoint[]): Route {
@@ -297,6 +306,44 @@ export function nearestOnRoute(route: Route, point: LatLon): NearestOnRoute | nu
     routeDistanceM: lerp(a.distanceM, b.distanceM, best.t),
     offsetM: distanceM(point, nearest),
   }
+}
+
+export function routeCandidates(route: Route, point: LatLon): NearestOnRoute[] {
+  const points = route.points
+  if (points.length < 2) return points.length ? [nearestOnRoute(route, point)!] : []
+
+  const kx = Math.cos(point.lat * RAD)
+  const x = (p: LatLon) => (p.lon - point.lon) * kx
+  const y = (p: LatLon) => p.lat - point.lat
+  const d2: number[] = []
+  const ts: number[] = []
+
+  for (let i = 1; i < points.length; i++) {
+    const ax = x(points[i - 1]!)
+    const ay = y(points[i - 1]!)
+    const dx = x(points[i]!) - ax
+    const dy = y(points[i]!) - ay
+    const len2 = dx * dx + dy * dy
+    const t = len2 > 0 ? Math.min(Math.max(-(ax * dx + ay * dy) / len2, 0), 1) : 0
+
+    ts.push(t)
+    d2.push((ax + t * dx) ** 2 + (ay + t * dy) ** 2)
+  }
+
+  const out: NearestOnRoute[] = []
+
+  for (const [j, d] of d2.entries()) {
+    if ((j > 0 && d2[j - 1]! < d) || (j + 1 < d2.length && d2[j + 1]! < d)) continue
+
+    const a = points[j]!
+    const b = points[j + 1]!
+    const nearest = { lat: lerp(a.lat, b.lat, ts[j]!), lon: lerp(a.lon, b.lon, ts[j]!) }
+
+    out.push({ routeDistanceM: lerp(a.distanceM, b.distanceM, ts[j]!), offsetM: distanceM(point, nearest) })
+  }
+
+  out.push({ routeDistanceM: route.totalDistanceM, offsetM: distanceM(point, points.at(-1)!) })
+  return out.sort((a, b) => a.routeDistanceM - b.routeDistanceM)
 }
 
 export function elevationProfile(route: Route, samples = 200): ElevationProfile | null {

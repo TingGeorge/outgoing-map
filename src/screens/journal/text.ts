@@ -15,10 +15,16 @@ export const POI_KIND: Record<PoiKind, string> = {
   other_hiking: '沿途景點',
 }
 
-export const PLACEMENT: Record<PlacementSource, string> = {
+const PLACEMENT: Record<PlacementSource, string> = {
   track: '依拍攝時間放上路線',
   exif: '照片自己的定位',
   none: '無法放到路線上',
+}
+
+export function placementLabel(photo: Photo): string {
+  const p = photo.placement
+  const snapped = p.source === 'exif' && (p.lat !== photo.gps?.lat || p.lon !== photo.gps?.lon)
+  return snapped ? '依照片的定位放上路線' : PLACEMENT[p.source]
 }
 
 export function photoAlt(photo: Photo): string {

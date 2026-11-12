@@ -1037,7 +1037,7 @@ test.describe('without the web fonts', () => {
   for (const width of [390, 320]) {
     test(`headings fall back to a system kai font and nothing overflows at ${width} px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 })
-      const id = await seed(page, { title: '合歡北峰兩天一夜縱走看雲海與星空', gpxXml: multiDayGpx('2026-11-07T06:00:00Z', '2026-11-08T02:00:00Z') })
+      const id = await seed(page, { title: '合歡北峰兩天一夜縱走看雲海與星空', gpxXml: multiDayGpx('2026-11-06T22:00:00Z', '2026-11-08T02:00:00Z') })
       await openTrip(page, id)
 
       expect(await page.evaluate(() => [...document.fonts].filter((f) => f.status === 'loaded').length)).toBe(0)

@@ -19,7 +19,7 @@ import {
 import { useAutosave } from './drafts'
 import { useBackToClose } from './overlays'
 import { release } from './urls'
-import { PLACEMENT, photoAlt, photoEle } from './text'
+import { photoAlt, photoEle, placementLabel } from './text'
 import s from './journal.module.css'
 
 interface Props {
@@ -187,7 +187,7 @@ export function Viewer({ photos, photoId, tripId, coverId, onSelect, onClose, re
           )}
           {ele !== null && <span>海拔 {formatMetres(ele)} 公尺</span>}
         </p>
-        <p className={s.viewerPlace}>在路線上的位置：{PLACEMENT[photo.placement.source]}</p>
+        <p className={s.viewerPlace}>在路線上的位置：{placementLabel(photo)}</p>
 
         <Caption key={photo.id} photo={photo} reload={reload} />
 

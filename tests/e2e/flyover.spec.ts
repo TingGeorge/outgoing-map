@@ -9,17 +9,18 @@ interface Seeded {
   stops: string[]
 }
 
-async function seed(page: Page, { photos = true, points = 'all' as 'all' | 'one' } = {}): Promise<Seeded> {
+async function seed(page: Page, { photos = true, points = 'all' as 'all' | 'one', otherDay = false } = {}): Promise<Seeded> {
   await page.addInitScript(() => localStorage.setItem('thunderforest-key', 'ffffffffffffffffffffffffffffffff'))
   await page.goto('./#/settings')
 
   return page.evaluate(
-    async ({ photos, points, STORAGE, CORE }) => {
+    async ({ photos, points, otherDay, STORAGE, CORE }) => {
       const storage = await import(STORAGE)
       const core = await import(CORE)
 
       const trip = await storage.createTrip({ title: '合歡北峰' })
-      const track = core.parseGpx(await (await fetch('/tests/fixtures/hehuan-north.gpx')).text()).points
+      const gpx = await (await fetch('/tests/fixtures/hehuan-north.gpx')).text()
+      const track = core.parseGpx(otherDay ? gpx.replaceAll('2026-11-0', '2026-10-0') : gpx).points
       await storage.saveTrack(trip.id, points === 'one' ? track.slice(0, 1) : track)
 
       if (photos) {
@@ -34,7 +35,7 @@ async function seed(page: Page, { photos = true, points = 'all' as 'all' | 'one'
 
       return { id: trip.id as string, stops: placed.map((p: { id: string }) => p.id) }
     },
-    { photos, points, STORAGE: '/src/storage/index.ts', CORE: '/src/core/index.ts' },
+    { photos, points, otherDay, STORAGE: '/src/storage/index.ts', CORE: '/src/core/index.ts' },
   )
 }
 
@@ -134,6 +135,20 @@ test('with reduced motion it does not auto-play and still steps through photos',
 
   await page.getByRole('button', { name: '下一張照片' }).click()
   await expect(popup(page)).toHaveAttribute('data-photo-id', stops[0]!)
+})
+
+test('with a GPX whose times are not real, the clock shows only the shown photo\'s time', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const { id, stops } = await seed(page, { otherDay: true })
+  await open(page, id)
+
+  const clock = page.locator('span:has(> span[aria-hidden="true"])')
+  await expect(clock).toBeHidden()
+
+  await page.getByRole('button', { name: '下一張照片' }).click()
+  await expect(popup(page)).toHaveAttribute('data-photo-id', stops[0]!)
+  await expect(clock).toBeVisible()
+  await expect(clock).toHaveText('07:20')
 })
 
 test('close and Escape return to the journal, also when the player was opened from a link', async ({ page }) => {

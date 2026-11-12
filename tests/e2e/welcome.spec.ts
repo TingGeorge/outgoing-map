@@ -170,6 +170,7 @@ test('double-click and Enter repeats on 下一步 store the key once and move on
 
   await page.getByRole('button', { name: '下一步' }).dblclick()
   await expect(heading(page)).toContainText('都準備好了')
+  await expect(page.getByText(/登山 App 當天實際記錄的 GPX 檔最完整/)).toBeVisible()
   expect(await page.evaluate(() => (window as unknown as { __writes: () => number }).__writes())).toBe(1)
   await expect(page).toHaveURL(/#\/welcome$/)
 })

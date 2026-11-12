@@ -120,12 +120,42 @@ test('only broken photos: no trip is left behind', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '把走過的山，變成一篇日誌' })).toBeVisible()
 })
 
-test('photos from another day than the GPX are flagged but still added', async ({ page }) => {
+test('photos from another day than the GPX: the GPX time is not used, the photo times are', async ({ page }) => {
   const other = readFileSync(fixture('hehuan-north.gpx'), 'utf8').replaceAll('2026-11-06', '2026-10-01').replaceAll('2026-11-07', '2026-10-02')
 
   await page.goto('./#/new')
   await gpxInput(page).setInputFiles({ name: 'other-day.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(other) })
+  await expect(page.getByText(/10 月 2 日/)).toBeVisible()
+
   await photoInput(page).setInputFiles(PHOTOS)
+  await expect(page.getByText('這個 GPX 檔的時間不是實際記錄的，會改用照片的時間來排列。')).toBeVisible()
+  await expect(page.getByText(/10 月 2 日/)).toHaveCount(0)
+  await expect(page.getByLabel('這趟的名字')).toHaveValue('合歡北峰')
+  await page.getByRole('button', { name: '建立回憶' }).click()
+
+  await expect(page.getByText('加入了 4 張照片')).toBeVisible()
+  await expect(page.getByText('照片的時間和這條路線對不上')).toHaveCount(0)
+
+  await page.getByRole('button', { name: '看這趟日誌' }).click()
+  await expect(page.getByText('照片拍攝於 07:20 到 10:15')).toBeVisible()
+  await expect(page.getByText(/2026 年 11 月 7 日/)).toBeVisible()
+  await expect(page.getByText('時間', { exact: true })).toHaveCount(0)
+
+  await page.locator('ol').getByRole('button', { name: /^打開照片/ }).first().click()
+  await expect(page.getByRole('dialog', { name: '照片' }).getByText('在路線上的位置：依照片的定位放上路線')).toBeVisible()
+})
+
+test('most photos outside the GPX time are flagged but still added', async ({ page }) => {
+  const later = readFileSync(fixture('hehuan-north.gpx'), 'utf8').replace(
+    /<time>([^<]+)<\/time>/g,
+    (_, t: string) => `<time>${new Date(Date.parse(t) + 3.5 * 3_600_000).toISOString()}</time>`,
+  )
+
+  await page.goto('./#/new')
+  await gpxInput(page).setInputFiles({ name: 'later.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(later) })
+  await photoInput(page).setInputFiles(PHOTOS)
+  await expect(page.getByText('已選 4 張照片')).toBeVisible()
+  await expect(page.getByText('這個 GPX 檔的時間不是實際記錄的', { exact: false })).toHaveCount(0)
   await page.getByRole('button', { name: '建立回憶' }).click()
 
   await expect(page.getByText('照片的時間和這條路線對不上')).toBeVisible()

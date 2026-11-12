@@ -7,7 +7,7 @@
 ## 怎麼用
 
 1. 第一次開啟時，照著教學到 Thunderforest 免費領一把地圖鑰匙（API Key），貼上就好。
-2. 回到家，按「新的回憶」，選當天登山 App 匯出的 GPX 檔和照片。
+2. 回到家，按「新的回憶」，選當天登山 App 匯出的 GPX 檔和照片。要最完整的結果，GPX 檔要是登山 App 當天實際記錄的，不是網路下載或自己畫的路線。
 3. 打開日誌看路線、照片和海拔，寫幾句日記，或按「立體播放」重走一次。
 
 需要的只有一把免費的 Thunderforest 鑰匙，不用帳號、不用付費。
@@ -62,12 +62,15 @@
 - storage：同一趟行程裡，內容相同的照片（原始檔 SHA-256 相同）不會重複加入，會出現在 `failed`。`failed[].reason` 是可以直接顯示的中文句子（`PHOTO_FAILURE`：已加入過、HEIC 無法開啟、不是照片檔、無法讀取）。`onProgress(done, total)` 每處理完一個檔案呼叫一次，失敗的也算。
 - storage：行程沒有封面或封面被刪時，自動用 `listPhotos` 的第一張當封面。
 - storage：`saveTrack`、`addPhotos`、`deletePhoto`、`importTrip` 之後會自動重算 `hasTrack`、`stats`、`startAt`/`endAt`、`photoCount`、封面與每張照片的 `placement`；畫面在這些呼叫之後要重新 `getTrip` / `listPhotos`。路線沒有點時 `stats` 是 `null`。`saveTrack(id, [])` 會移除軌跡。
+- storage：資料庫版本 2 在升級時對每篇已存的回憶重算一次（同 `saveTrack` 之後），舊的回憶不用重新匯入。
+- 日誌：路線沒有時間、照片有時間時，「時間」格改成一行「照片拍攝於 09:12 到 13:40」。立體播放只在顯示照片時顯示那張照片的時間。新的回憶選好檔案後，遇到 GPX 時間不可信會顯示「這個 GPX 檔的時間不是實際記錄的，會改用照片的時間來排列。」
 - storage：丟出的錯誤都是 `Error`，`message` 是可以直接顯示的中文（找不到這篇回憶、找不到這張照片、裝置的儲存空間不足…、無法存取裝置上的資料…、登山回憶已在另一個分頁更新…）。`deleteTrip` / `deletePhoto` 對不存在的 id 不會出錯。
 - storage：`getPhotoUrl` 每次回傳新的 object URL，用完要 `URL.revokeObjectURL`（例如在 effect 的 cleanup）。`Photo.width`/`height` 是轉正後、長邊最多 2048 的尺寸；縮圖長邊最多 480。
 - storage：`exportTrip` 回傳 zip `Blob`，建議檔名 `${title}-${yyyy-mm-dd}.hiking.zip`（日期用 `startAt`，沒有就 `createdAt`；`/\:*?"<>|` 換成 `-`）。`importTrip` 一律給新的 id，匯入兩次會得到兩趟獨立的行程；檔案不對時丟出的 `message` 可直接顯示。
 - storage 需要安全環境（https 或 localhost）。
 - core：`parseGpx` 失敗時丟出的 `message` 可直接顯示（這個檔案不是有效的 GPX、GPX 裡沒有任何定位點；KML、KMZ、TCX、FIT 檔是「這是 KML 檔，請從登山 App 匯出 GPX 檔」之類）。`parseGpx` 保留檔案裡的順序；`buildRoute` 在每個點都有時間且順序亂掉時依時間（穩定）重排，只有部分點有時間時維持檔案順序、把倒退的時間設成 null。
-- core：斷點有兩種，都不算進距離與爬升。單一一跳：相鄰兩個有時間的點相距至少 1 公里（`GAP_MIN_M`），換算速度超過每小時 12 公里（`GAP_MIN_SPEED_KMH`）或時間沒有前進，算是記錄暫停。連續行車：連續幾段每一段都超過每小時 25 公里（`GAP_RUN_SPEED_KMH`），合計至少 1 公里（例如同一個檔案裡開車換登山口）；但如果這些連續行車段加起來佔了整條路線一半以上的時間，就當成整趟是騎車或開車的紀錄，不套用連續行車斷點（單一一跳仍然算），所以單車、越野跑或純開車的檔案保留完整距離。斷點內的點會從路線丟掉，讓斷點成為單一線段，`RoutePoint.distanceM` 在斷點兩側相同。`isRouteGap(a, b)` 對斷點兩側的兩個路線點為 true，地圖、海拔剖面與立體播放都在這裡把線斷開。沒有時間的路線不會有斷點。`durationMs` 仍是頭尾時間差。`buildRoute(track, photos)` 回傳的 `Route` 當成不可變。`routeStats` 的爬升用 5 公尺的遲滯門檻。`buildTimeline` 已排好順序，沒有時間或放不上路線的照片在最後。`elevationProfile` 在路線沒有海拔時回傳 `null`。
+- core：GPX 的時間不可信：有照片有拍攝時間，但沒有任何一張落在軌跡時間前後 30 分鐘內（例如網路下載或用 gpx.studio 畫的路線，時間是假的），`buildRoute` 就把軌跡的時間全部當成沒有，和沒有 `<time>` 的 GPX 走同一條路（`core.trackTimeTrusted` 是唯一的判斷）。所以日期、開始與結束時間都來自照片，沒有時長、景點經過時間與立體播放飛行中的時間。
+- core：斷點有兩種，都不算進距離與爬升。單一一跳：相鄰兩個有時間的點相距至少 1 公里（`GAP_MIN_M`），換算速度超過每小時 12 公里（`GAP_MIN_SPEED_KMH`）或時間沒有前進，算是記錄暫停。連續行車：連續幾段每一段都超過每小時 25 公里（`GAP_RUN_SPEED_KMH`），合計至少 1 公里（例如同一個檔案裡開車換登山口）；但如果這些連續行車段加起來佔了整條路線一半以上的時間，就當成整趟是騎車或開車的紀錄，不套用連續行車斷點（單一一跳仍然算），所以單車、越野跑或純開車的檔案保留完整距離。斷點內的點會從路線丟掉，讓斷點成為單一線段，`RoutePoint.distanceM` 在斷點兩側相同。`isRouteGap(a, b)` 對斷點兩側的兩個路線點為 true，地圖、海拔剖面與立體播放都在這裡把線斷開。沒有時間的路線不會有斷點。`durationMs` 仍是頭尾時間差。`buildRoute(track, photos)` 回傳的 `Route` 當成不可變。`routeStats` 的爬升用 5 公尺的遲滯門檻。`buildTimeline` 已排好順序，沒有時間或放不上路線的照片在最後。依照片 GPS 放上路線（`'exif'`）時，有拍攝時間的照片依時間排，`routeDistanceM` 不會倒退，在這個條件下取每張照片到路線的距離總和最小的位置（動態規劃，候選點是照片沿路線的距離局部最小點加上路線終點），所以環狀或往返路線上，回程拍的照片不會跑到去程；沒有時間的照片仍放在最近的點。照片離路線不超過 150 公尺（`SNAP_TO_ROUTE_M`）時，`placement` 的 lat/lon/ele 是路線上的那一點，照片檢視說「依照片的定位放上路線」；更遠就保留照片自己的座標（「照片自己的定位」）。`elevationProfile` 在路線沒有海拔時回傳 `null`。
 - poi：`poisAlongRoute(route)` 是 async（會先載入 `poi.json`，載入失敗會 reject，下次呼叫會重試）。往返路線上同一個景點只列一次。多數非山頂的景點 `ele` 是 `null`。種類的中文：`peak` 山頂、`trailhead` 登山口、`hut` 山屋、`shelter` 避難小屋、`campsite` 營地、`viewpoint` 觀景點、`water` 水源、`waterfall` 瀑布、`lake` 湖泊、`hotspring` 溫泉。型別裡的 `other_hiking`，以及整個名稱只是通用字詞（例如「涼亭」「水源」「候車亭」「司令台」「正門」「beach」）、通用字詞前後只加編號（「2號涼亭」「涼亭1」「第二候車亭」，前後的純數字只看一到兩位，所以「2850營地」保留）或純數字、類似十六進位代碼的項目，在產生 `poi.json` 時就濾掉了，不會出現。
 - key：`validateKey` 對格式不對的字串不發請求直接回 `'invalid'`；瀏覽器分不出「金鑰被拒絕」和「額度用完」，兩者都會讓圖磚載入失敗。
 - pwa：`<InstallHint />` 不需要 props，自己決定要不要顯示；`requestPersistentStorage()` 不會丟錯。
