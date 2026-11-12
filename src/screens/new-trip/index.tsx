@@ -1,6 +1,6 @@
 import exifr from 'exifr'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { buildRoute, exifTimeToEpoch, parseGpx, trackTimeTrusted } from '../../core'
+import { SNAP_TO_ROUTE_M, buildRoute, exifTimeToEpoch, parseGpx, trackTimeTrusted } from '../../core'
 import { goBack, guardBack, navigate } from '../../router'
 import { addPhotos, createTrip, deleteTrip, getTrip, listPhotos, saveTrack } from '../../storage'
 import { PHOTO_TIME_TOLERANCE_MS, type Id, type PhotoImportFailure, type Route, type TrackPoint } from '../../types'
@@ -42,6 +42,7 @@ interface Summary {
   hadGpx: boolean
   byTime: number
   byPhoto: number
+  farPhoto: number
   unplaced: number
   failed: PhotoImportFailure[]
   offWindow: boolean
@@ -110,8 +111,8 @@ function FailureList({ failed }: { failed: PhotoImportFailure[] }) {
 }
 
 function ResultView({ summary, onOpen }: { summary: Summary; onOpen: () => void }) {
-  const { byTime, byPhoto, unplaced, failed, hadGpx, offWindow, error } = summary
-  const added = byTime + byPhoto + unplaced
+  const { byTime, byPhoto, farPhoto, unplaced, failed, hadGpx, offWindow, error } = summary
+  const added = byTime + byPhoto + farPhoto + unplaced
 
   return (
     <Screen
@@ -144,6 +145,12 @@ function ResultView({ summary, onOpen }: { summary: Summary; onOpen: () => void 
                 <dt>依照片的位置放上路線</dt>
                 <dd>{byPhoto}</dd>
               </div>
+              {farPhoto > 0 && (
+                <div>
+                  <dt>依照片的位置，離路線超過 {SNAP_TO_ROUTE_M} 公尺</dt>
+                  <dd>{farPhoto}</dd>
+                </div>
+              )}
               <div>
                 <dt>放不上路線</dt>
                 <dd>{unplaced}</dd>
@@ -324,7 +331,8 @@ export function NewTripScreen() {
           tripId: trip.id,
           hadGpx: gpx !== null,
           byTime: placed.filter((p) => p.placement.source === 'track').length,
-          byPhoto: placed.filter((p) => p.placement.source === 'exif').length,
+          byPhoto: placed.filter((p) => p.placement.source === 'exif' && p.placement.onRoute).length,
+          farPhoto: placed.filter((p) => p.placement.source === 'exif' && !p.placement.onRoute).length,
           unplaced: placed.filter((p) => p.placement.source === 'none').length,
           failed,
           offWindow: withTime.length > 0 && outside.length / withTime.length > 0.5,
@@ -347,6 +355,7 @@ export function NewTripScreen() {
           hadGpx: saved.hasTrack,
           byTime: 0,
           byPhoto: 0,
+          farPhoto: 0,
           unplaced: saved.photoCount,
           failed: [],
           offWindow: false,

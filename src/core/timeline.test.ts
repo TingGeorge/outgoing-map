@@ -251,10 +251,11 @@ describe('a drawn GPX with made-up times', () => {
     expect([reverse[1], reverse[0], reverse[2]]).toEqual(forward)
   })
 
-  test('500 photos on a 100 km route are placed within a second', () => {
+  test.each([500, 2000])('%i photos on a 100 km route are placed within a second, each near where it was taken', (count) => {
     const track = Array.from({ length: 10_001 }, (_, i) => tp(121 + i * 0.0001, 1000, fake + i * 1000, 24 + 0.002 * Math.sin(i / 300)))
     const base = untimed(track)
-    const photos = Array.from({ length: 500 }, (_, i) => photo({ takenAt: day + i * MIN, gps: reading(base, (i + 0.5) * (base.totalDistanceM / 500), 0.0002) }))
+    const truth = Array.from({ length: count }, (_, i) => (i + 0.5) * (base.totalDistanceM / count))
+    const photos = truth.map((d, i) => photo({ takenAt: day + i * MIN, gps: reading(base, d, 0.0002) }))
     const route = buildRoute(track, photos)
 
     const started = performance.now()
@@ -262,6 +263,7 @@ describe('a drawn GPX with made-up times', () => {
 
     expect(performance.now() - started).toBeLessThan(1000)
     expect(base.totalDistanceM).toBeGreaterThan(100_000)
+    expect(Math.max(...at.map((d, i) => Math.abs(d - truth[i]!)))).toBeLessThan(60)
     expect(at).toEqual([...at].sort((a, b) => a - b))
   })
 })
@@ -334,6 +336,22 @@ describe('buildTimeline', () => {
 
     expect(ids(items)).toEqual(['start', 'poi2', 'summit', 'poi1', 'end'])
     expect(items[0]!.time).toBeNull()
+  })
+
+  test('on an untimed route 出發 is first and the end is last, even with photos right at them', () => {
+    const route = buildRoute(fixture('no-time.gpx'), [])
+    const first = route.points[0]!
+    const end = route.points.at(-1)!
+    const items = buildTimeline(
+      route,
+      [
+        placed(route, { fileName: 'atEnd', takenAt: t0 + 60 * MIN, gps: gps(end.lon, end.lat) }),
+        placed(route, { fileName: 'atStart', takenAt: t0, gps: gps(first.lon, first.lat) }),
+      ],
+      [],
+    )
+
+    expect(ids(items)).toEqual(['start', 'atStart', 'atEnd', 'end'])
   })
 
   test('empty and single-point routes', () => {

@@ -7,6 +7,8 @@ export const ORDER_STEP_M = 10
 
 export const MAX_ORDER_SAMPLES = 20_000
 
+export const MAX_ORDER_CELLS = 4_000_000
+
 export function placePhotos(photos: Photo[], route: Route): Placement[] {
   const byTime = (photo: Photo): Placement | null => {
     const s = photo.takenAt === null ? null : sampleAtTime(route, photo.takenAt)
@@ -46,13 +48,13 @@ function alongRoute(route: Route, photos: Photo[]): Map<Photo, NearestOnRoute> {
 
   if (timed.length === 0) return out
 
-  const step = Math.max(ORDER_STEP_M, route.totalDistanceM / MAX_ORDER_SAMPLES)
+  const step = Math.max(ORDER_STEP_M, route.totalDistanceM / MAX_ORDER_SAMPLES, (route.totalDistanceM * timed.length) / MAX_ORDER_CELLS)
   const at: RouteSample[] = []
 
   for (let d = 0; d < route.totalDistanceM; d += step) at.push(sampleAtDistance(route, d)!)
   at.push(sampleAtDistance(route, route.totalDistanceM)!)
 
-  // ponytail: positions are the route sampled every ORDER_STEP_M (coarser past MAX_ORDER_SAMPLES), with flat-plane offsets, so an ordered photo lands within half a step of its best spot unless its own nearest point already fits the order; O(photos × samples) time and Uint16 back pointers per photo.
+  // ponytail: positions are the route sampled every ORDER_STEP_M, coarser past MAX_ORDER_SAMPLES or when photos × samples passes MAX_ORDER_CELLS (back pointers stay under ~8 MB), with flat-plane offsets, so an ordered photo lands within half a step of its best spot unless its own nearest point already fits the order; O(photos × samples) time and Uint16 back pointers per photo.
   const lat = Float64Array.from(at, (a) => a.lat)
   const lon = Float64Array.from(at, (a) => a.lon)
   let cost = new Float64Array(at.length)
@@ -132,7 +134,7 @@ export function buildTimeline(route: Route, photos: Photo[], pois: PoiOnRoute[])
     }
 
     const time = item.time ?? sampleAtDistance(route, d!)?.time ?? Infinity
-    return timed ? [0, time, d!, RANK[item.kind]] : [0, d!, time, RANK[item.kind]]
+    return timed ? [0, time, d!, RANK[item.kind]] : [0, d!, RANK[item.kind], time]
   }
 
   const keys = new Map(items.map((item) => [item, key(item)]))

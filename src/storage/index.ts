@@ -113,7 +113,7 @@ function db(): Promise<IDBPDatabase<Schema>> {
       if (oldVersion === 1 || oldVersion === 2) {
         const write = tx as unknown as WriteTx
         void write.objectStore('trips').getAllKeys().then(async (ids) => {
-          for (const id of ids) await refresh(write, id, false).catch(() => {})
+          for (const id of ids) await refresh(write, id, false).catch((e: unknown) => console.warn('could not recompute trip', id, e))
         })
       }
     },
