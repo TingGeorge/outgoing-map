@@ -129,6 +129,7 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
   const [attempt, setAttempt] = useState(0)
   const [phase, setPhase] = useState<'loading' | 'ready' | FailReason>('loading')
   const [trouble, setTrouble] = useState(false)
+  const [troubleHidden, setTroubleHidden] = useState(false)
   const [flight, setFlight] = useState<FlightState>({ playing: false, ended: false, active: -1, shown: -1 })
   const [shownPhoto, setShownPhoto] = useState(-1)
   const [leaving, setLeaving] = useState(false)
@@ -168,7 +169,7 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
     const f = startFlight(mapRef.current, data.path, data.timeline, data.stops.map((p) => (p.placement.source === 'none' ? 0 : p.placement.routeDistanceM)), reduced, {
       ready: () => setPhase('ready'),
       fail: (reason) => setPhase(reason),
-      tileTrouble: () => setTrouble(true),
+      tileTrouble: setTrouble,
       state: (next) => {
         shownTime = data.stops[next.shown]?.takenAt ?? NaN
         setFlight(next)
@@ -365,9 +366,9 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
         )}
       </div>
 
-      {ready && trouble && (
+      {ready && trouble && !troubleHidden && (
         <div className={s.trouble}>
-          <Notice tone="warning">網路不穩，部分地形或空拍影像沒有載入。立體畫面需要網路連線。</Notice>
+          <Notice tone="warning" onDismiss={() => setTroubleHidden(true)}>網路不穩，部分地形或空拍影像沒有載入。立體畫面需要網路連線。</Notice>
         </div>
       )}
 

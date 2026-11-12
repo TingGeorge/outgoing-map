@@ -21,19 +21,48 @@ export async function requestPersistentStorage(): Promise<boolean> {
   }
 }
 
+const WARM_DELAY_MS = 3000
 const FONT_URL = /^https:\/\/fonts\.(googleapis|gstatic)\.com\//
+
+export async function warmFonts(urls: Iterable<string>, signal: AbortSignal): Promise<void> {
+  await Promise.all(
+    [...new Set(urls)].map(async (url) => {
+      try {
+        const res = await fetch(url, { mode: 'cors', signal })
+        await res.arrayBuffer()
+      } catch {}
+    }),
+  )
+}
 
 export function keepFontsOffline(): void {
   const sw = navigator.serviceWorker
   if (!sw || sw.controller) return
 
+  const abort = new AbortController()
+  let leaving = false
+
+  window.addEventListener(
+    'pagehide',
+    () => {
+      leaving = true
+      abort.abort()
+    },
+    { once: true },
+  )
+
   const warm = async () => {
-    await document.fonts.ready
-    const urls = performance.getEntriesByType('resource').map((e) => e.name).filter((url) => FONT_URL.test(url))
-    for (const url of new Set(urls)) fetch(url, { mode: 'cors' }).catch(() => {})
+    try {
+      await document.fonts.ready
+      await new Promise((resolve) => setTimeout(resolve, WARM_DELAY_MS))
+      if (leaving || !navigator.onLine) return
+
+      const urls = performance.getEntriesByType('resource').map((e) => e.name).filter((url) => FONT_URL.test(url))
+      await warmFonts(urls, abort.signal)
+    } catch {}
   }
 
-  sw.addEventListener('controllerchange', warm, { once: true })
+  sw.addEventListener('controllerchange', () => void warm(), { once: true })
 }
 
 export function isStandalone(): boolean {

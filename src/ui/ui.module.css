@@ -616,6 +616,7 @@
 }
 
 .notice {
+  position: relative;
   display: flex;
   gap: var(--space-3);
   padding: var(--space-4);
@@ -640,6 +641,12 @@
   border-color: var(--color-accent);
 }
 
+.noticeDismiss {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
 .noticeIcon {
   flex: none;
   margin-top: 1px;
@@ -652,6 +659,10 @@
 .notice-warning .noticeIcon,
 .notice-error .noticeIcon {
   color: var(--color-accent);
+}
+
+.noticeBody:has(+ .noticeDismiss) {
+  padding-right: 36px;
 }
 
 .noticeBody {

@@ -6,11 +6,13 @@ import {
   buildTimeline,
   easeAngle,
   hudSteps,
+  isNetworkTileError,
   requiredCameraAltitude,
   resamplePath,
   sampleTimeline,
   smoothHeadings,
   timeAtDistance,
+  tileTrouble,
   travelSeconds,
 } from './flight'
 
@@ -225,5 +227,28 @@ describe('HUD steps', () => {
     expect(formatKm(steps(23_600, NaN, NaN).distanceM)).toBe('24')
     expect(steps(100, NaN, NaN).eleM).toBeNaN()
     expect(steps(100, NaN, NaN).minute).toBeNaN()
+  })
+})
+
+describe('tile trouble', () => {
+  const mix = (ok: number, bad: number, base = 0) => [
+    ...Array.from({ length: ok }, (_, i) => ({ at: base + i, ok: true })),
+    ...Array.from({ length: bad }, (_, i) => ({ at: base + i, ok: false })),
+  ]
+
+  test('only network-like errors count', () => {
+    expect(isNetworkTileError({ name: 'AbortError' })).toBe(false)
+    expect(isNetworkTileError({ status: 404 })).toBe(false)
+    expect(isNetworkTileError({ status: 503 })).toBe(true)
+    expect(isNetworkTileError({ status: 0 })).toBe(true)
+    expect(isNetworkTileError(new TypeError('Failed to fetch'))).toBe(true)
+  })
+
+  test('needs several failures and a real share, and clears when the window passes', () => {
+    expect(tileTrouble(mix(100, 3), 50)).toBe(false)
+    expect(tileTrouble(mix(100, 10), 50)).toBe(false)
+    expect(tileTrouble(mix(10, 5), 50)).toBe(true)
+    expect(tileTrouble(mix(0, 8), 50)).toBe(true)
+    expect(tileTrouble(mix(0, 8), 50_000)).toBe(false)
   })
 })

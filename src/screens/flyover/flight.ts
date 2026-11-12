@@ -267,3 +267,24 @@ export function timeAtDistance(tl: Timeline, distanceM: number): number {
 
   return tl.duration
 }
+
+export interface TileEvent {
+  at: number
+  ok: boolean
+}
+
+export const TILE_WINDOW_MS = 20_000
+
+export function isNetworkTileError(error: unknown): boolean {
+  const { name, status } = (error ?? {}) as { name?: string; status?: number }
+  if (name === 'AbortError') return false
+
+  return typeof status !== 'number' || status === 0 || status >= 500 || status === 408 || status === 429
+}
+
+export function tileTrouble(events: TileEvent[], now: number): boolean {
+  const recent = events.filter((e) => now - e.at <= TILE_WINDOW_MS)
+  const failed = recent.filter((e) => !e.ok).length
+
+  return failed >= 4 && failed * 4 >= recent.length
+}

@@ -1,7 +1,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { InstallHint, requestPersistentStorage } from './index'
+import { InstallHint, requestPersistentStorage, warmFonts } from './index'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -104,5 +104,29 @@ describe('InstallHint', () => {
     await act(async () => first.el.querySelector<HTMLButtonElement>('button[aria-label="關閉提示"]')!.click())
     expect(first.el.innerHTML).toBe('')
     expect((await render()).el.innerHTML).toBe('')
+  })
+})
+
+describe('warmFonts', () => {
+  it('swallows rejected, aborted and unreadable fetches without an unhandled rejection', async () => {
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+
+    const body = { arrayBuffer: () => Promise.reject(new TypeError('body')) }
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('due to access control checks'))
+      .mockRejectedValueOnce(new DOMException('aborted', 'AbortError'))
+      .mockResolvedValueOnce(body)
+    vi.stubGlobal('fetch', fetchMock)
+
+    await warmFonts(['https://fonts.gstatic.com/a', 'https://fonts.gstatic.com/b', 'https://fonts.gstatic.com/c', 'https://fonts.gstatic.com/a'], new AbortController().signal)
+    await new Promise((r) => setTimeout(r, 20))
+
+    process.off('unhandledRejection', unhandled)
+    vi.unstubAllGlobals()
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(unhandled).not.toHaveBeenCalled()
   })
 })

@@ -9,7 +9,11 @@ import {
   sampleTimeline,
   timeAtDistance,
   type Path,
+  type TileEvent,
   type Timeline,
+  isNetworkTileError,
+  tileTrouble,
+  TILE_WINDOW_MS,
 } from './flight'
 import s from './flyover.module.css'
 
@@ -45,7 +49,7 @@ export interface FrameInfo {
 export interface FlightHooks {
   ready(): void
   fail(reason: FailReason): void
-  tileTrouble(): void
+  tileTrouble(on: boolean): void
   state(state: FlightState): void
   frame(info: FrameInfo): void
   insets(): { top: number; bottom: number }
@@ -94,7 +98,9 @@ export function startFlight(
   let readyTimer = 0
   let isReady = false
   let tileErrors = 0
-  let troubleSaid = false
+  let troubleOn = false
+  const tileEvents: TileEvent[] = []
+  let troubleTimer = 0
   const loadedTiles = new Set<string>()
 
   let t = 0
@@ -414,18 +420,24 @@ export function startFlight(
       destroyed = true
       cancelAnimationFrame(raf)
       clearTimeout(readyTimer)
+      clearInterval(troubleTimer)
       map?.remove()
       map = null
     },
   }
 
-  const sayTrouble = (slow = false) => {
-    if (troubleSaid || (!slow && navigator.onLine && tileErrors < 6)) return
-    troubleSaid = true
-    hooks.tileTrouble()
+  const judgeTrouble = () => {
+    const now = performance.now()
+    while (tileEvents.length && now - tileEvents[0]!.at > TILE_WINDOW_MS) tileEvents.shift()
+
+    const on = isReady && (!navigator.onLine || tileTrouble(tileEvents, now))
+    if (on === troubleOn) return
+
+    troubleOn = on
+    hooks.tileTrouble(on)
   }
 
-  const markReady = (slow = false) => {
+  const markReady = () => {
     if (isReady || destroyed || !map) return
     if (!hiker || !loadedTiles.has('photo') || !loadedTiles.has(TERRAIN_SOURCE_ID)) {
       clearTimeout(readyTimer)
@@ -435,7 +447,8 @@ export function startFlight(
     isReady = true
     clearTimeout(readyTimer)
     hooks.ready()
-    sayTrouble(slow)
+    troubleTimer = window.setInterval(judgeTrouble, 2000)
+    judgeTrouble()
     if (!reducedMotion) flight.play()
   }
 
@@ -468,7 +481,7 @@ export function startFlight(
     }
 
     const m = map
-    readyTimer = window.setTimeout(() => markReady(true), READY_TIMEOUT_MS)
+    readyTimer = window.setTimeout(markReady, READY_TIMEOUT_MS)
     fromLngLat = new mgl.LngLat(0, 0)
     toLngLat = new mgl.LngLat(0, 0)
 
@@ -483,13 +496,18 @@ export function startFlight(
       if (!isReady && !navigator.onLine) {
         clearTimeout(readyTimer)
         hooks.fail('network')
-      } else if (isReady) {
-        sayTrouble()
+        return
       }
+
+      if (isNetworkTileError(e.error)) tileEvents.push({ at: performance.now(), ok: false })
+      judgeTrouble()
     })
 
     m.on('sourcedata', (e) => {
-      if (e.tile?.state === 'loaded') loadedTiles.add(e.sourceId)
+      if (e.tile?.state !== 'loaded') return
+
+      loadedTiles.add(e.sourceId)
+      tileEvents.push({ at: performance.now(), ok: true })
     })
 
     m.on('webglcontextlost', () => hooks.fail('map'))

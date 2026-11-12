@@ -523,9 +523,10 @@ export interface NoticeProps {
   title?: string
   children: ReactNode
   action?: ReactNode
+  onDismiss?: () => void
 }
 
-export function Notice({ tone, title, children, action }: NoticeProps) {
+export function Notice({ tone, title, children, action, onDismiss }: NoticeProps) {
   const Icon = toneIcon[tone]
 
   return (
@@ -538,6 +539,17 @@ export function Notice({ tone, title, children, action }: NoticeProps) {
         <div>{children}</div>
         {action && <div className={s.noticeAction}>{action}</div>}
       </div>
+      {onDismiss && (
+        <span
+          className={s.noticeDismiss}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <IconButton label="關閉提醒" variant="moss" onClick={onDismiss}>
+            <CloseIcon size={20} />
+          </IconButton>
+        </span>
+      )}
     </div>
   )
 }

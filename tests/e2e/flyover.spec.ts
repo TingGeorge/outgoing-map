@@ -193,7 +193,41 @@ test('when only some imagery fails it plays and says part of it is missing', asy
   await page.route(/wmts\.nlsc\.gov\.tw/, (route) => (n++ % 2 ? route.abort('internetdisconnected') : route.continue()))
   await open(page, id)
 
-  await expect(page.getByText(/網路不穩，部分地形或空拍影像沒有載入/)).toBeVisible(READY)
+  const notice = page.getByText(/網路不穩，部分地形或空拍影像沒有載入/)
+  await expect(notice).toBeVisible(READY)
+
+  const close = page.getByRole('button', { name: '關閉提醒' })
+  const box = (await close.boundingBox())!
+  expect(box.width).toBeGreaterThanOrEqual(44)
+  expect(box.height).toBeGreaterThanOrEqual(44)
+
+  await close.click()
+  await expect(notice).toHaveCount(0)
+  await expect(root(page)).toHaveAttribute('data-state', 'playing')
+
+  const slider = page.getByRole('slider', { name: '播放進度與海拔剖面' })
+  const track = (await slider.boundingBox())!
+  await page.mouse.click(track.x + track.width * 0.995, track.y + track.height / 2)
+  await expect(page.getByRole('button', { name: '重新播放' })).toBeVisible({ timeout: 20_000 })
+  await page.getByRole('button', { name: '重新播放' }).click()
+  await expect(root(page)).toHaveAttribute('data-state', 'playing')
+  await page.waitForTimeout(1500)
+  await expect(notice).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '關閉提醒' })).toHaveCount(0)
+})
+
+test('a few 404s and cancelled requests during a healthy flight show no notice', async ({ page }) => {
+  const { id } = await seed(page, { photos: false })
+  let n = 0
+  await page.route(/wmts\.nlsc\.gov\.tw/, (route) => {
+    if (n++ % 5 === 4) return route.fulfill({ status: 404, body: '' })
+    return route.continue()
+  })
+  await open(page, id)
+  await page.waitForTimeout(8000)
+
+  expect(n).toBeGreaterThan(5)
+  await expect(page.getByText(/網路不穩/)).toHaveCount(0)
 })
 
 async function hikerInView(page: Page) {
