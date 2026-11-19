@@ -65,7 +65,7 @@ describe('placePhotos', () => {
     expect(late).toEqual({ source: 'none' })
 
     expect(lateWithGps).toMatchObject({ source: 'exif', lat: 24, lon: 121.01, ele: 1100 })
-    expect(lateWithGps!.source === 'exif' && lateWithGps!.routeDistanceM / total).toBeCloseTo(0.5, 3)
+    expect(lateWithGps!.source === 'exif' && lateWithGps!.routeDistanceM).toBeCloseTo(total, 3)
 
     expect(slightlyLate).toMatchObject({ source: 'track', routeDistanceM: total, lon: 121.02 })
   })
@@ -268,6 +268,55 @@ describe('a drawn GPX with made-up times', () => {
   })
 })
 
+describe('photos placed by GPS next to photos placed by time', () => {
+  const distances = (photos: Photo[], route: ReturnType<typeof straight>) =>
+    placePhotos(photos, route).map((p) => (p.source === 'none' ? NaN : p.routeDistanceM))
+
+  test('photos shot after the recording stopped do not land before the last photo on the track', () => {
+    const route = straight()
+    const total = route.totalDistanceM
+    const photos = [
+      photo({ takenAt: t0 + 10 * MIN }),
+      photo({ takenAt: t0 + 67 * MIN, gps: gps(121.02) }),
+      photo({ takenAt: t0 + 100 * MIN, gps: gps(121.015) }),
+      photo({ takenAt: t0 + 130 * MIN, gps: gps(121.005) }),
+    ]
+
+    const placed = placePhotos(photos, route)
+    const d = distances(photos, route)
+
+    expect(placed.map((p) => p.source)).toEqual(['track', 'track', 'exif', 'exif'])
+    expect(d[1]).toBeCloseTo(total, 3)
+    expect(d[2]).toBeCloseTo(total, 3)
+    expect(d[3]).toBeCloseTo(total, 3)
+    expect(placed[3]).toMatchObject({ lon: 121.005, onRoute: true })
+  })
+
+  test('photos shot long before the recording started do not land after the first photo on the track', () => {
+    const route = straight()
+    const photos = [
+      photo({ takenAt: t0 - 90 * MIN, gps: gps(121.015) }),
+      photo({ takenAt: t0 - 60 * MIN, gps: gps(121.001) }),
+      photo({ takenAt: t0 + 6 * MIN }),
+      photo({ takenAt: t0 + 50 * MIN }),
+    ]
+
+    const d = distances(photos, route)
+
+    expect(d[0]).toBeLessThanOrEqual(d[1]!)
+    expect(d[1]).toBeLessThanOrEqual(d[2]!)
+    expect([...d].sort((a, b) => a - b)).toEqual(d)
+  })
+
+  test('a late photo beyond the last track photo keeps its own nearest point', () => {
+    const route = straight()
+    const photos = [photo({ takenAt: t0 + 30 * MIN }), photo({ takenAt: t0 + 120 * MIN, gps: gps(121.017) })]
+    const d = distances(photos, route)
+
+    expect(d[1]).toBeCloseTo(nearestOnRoute(route, gps(121.017))!.routeDistanceM, 3)
+  })
+})
+
 describe('buildTimeline', () => {
   const placed = (route: ReturnType<typeof straight>, over: Partial<Photo>) => {
     const p = photo(over)
@@ -299,6 +348,17 @@ describe('buildTimeline', () => {
     )
 
     expect(ids(items)).toEqual(['start', 'atStart', 'poi1', 'poi2', 'atEnd', 'end'])
+  })
+
+  test('出發 comes first even when a photo was shot just before the recording started', () => {
+    const route = straight()
+    const items = buildTimeline(
+      route,
+      [placed(route, { fileName: 'after', takenAt: t0 + 8 * MIN }), placed(route, { fileName: 'before', takenAt: t0 - 2 * MIN })],
+      [],
+    )
+
+    expect(ids(items)).toEqual(['start', 'before', 'after', 'end'])
   })
 
   test('untimed or unplaced photos go last, timed ones first among them', () => {

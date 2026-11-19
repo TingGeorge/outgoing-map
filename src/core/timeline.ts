@@ -16,7 +16,8 @@ export function placePhotos(photos: Photo[], route: Route): Placement[] {
   }
 
   const timed = photos.map((p) => (route.source === 'gpx' || !p.gps ? byTime(p) : null))
-  const near = alongRoute(route, photos.filter((p, i) => !timed[i] && p.gps))
+  const anchors = photos.flatMap((p, i) => (timed[i]?.source === 'track' ? [{ time: p.takenAt!, d: timed[i].routeDistanceM }] : []))
+  const near = alongRoute(route, photos.filter((p, i) => !timed[i] && p.gps), anchors)
 
   return photos.map((photo, i) => {
     const gps = photo.gps
@@ -24,7 +25,8 @@ export function placePhotos(photos: Photo[], route: Route): Placement[] {
     if (!gps) return { source: 'none' }
 
     const hit = near.get(photo)
-    const on = hit && hit.offsetM <= SNAP_TO_ROUTE_M ? sampleAtDistance(route, hit.routeDistanceM) : null
+    const own = hit && hit.offsetM > SNAP_TO_ROUTE_M ? nearestOnRoute(route, gps) : hit
+    const on = own && own.offsetM <= SNAP_TO_ROUTE_M ? sampleAtDistance(route, own.routeDistanceM) : null
     const routeDistanceM = hit?.routeDistanceM ?? 0
 
     if (on) return { source: 'exif', lat: on.lat, lon: on.lon, ele: on.ele ?? gps.ele, routeDistanceM, onRoute: true }
@@ -32,7 +34,7 @@ export function placePhotos(photos: Photo[], route: Route): Placement[] {
   })
 }
 
-function alongRoute(route: Route, photos: Photo[]): Map<Photo, NearestOnRoute> {
+function alongRoute(route: Route, photos: Photo[], anchors: { time: number; d: number }[]): Map<Photo, NearestOnRoute> {
   const out = new Map<Photo, NearestOnRoute>()
   const nearest = new Map<Photo, NearestOnRoute>()
 
@@ -48,11 +50,18 @@ function alongRoute(route: Route, photos: Photo[]): Map<Photo, NearestOnRoute> {
 
   if (timed.length === 0) return out
 
-  const step = Math.max(ORDER_STEP_M, route.totalDistanceM / MAX_ORDER_SAMPLES, (route.totalDistanceM * timed.length) / MAX_ORDER_CELLS)
-  const at: RouteSample[] = []
+  // Photos placed by time are fixed: a photo placed by its GPS stays between the ones shot before and after it, so distance order is time order.
+  const lows = timed.map((p) => anchors.reduce((lo, a) => (a.time <= p.takenAt! ? Math.max(lo, a.d) : lo), 0))
+  const highs = timed.map((p) => anchors.reduce((hi, a) => (a.time >= p.takenAt! ? Math.min(hi, a.d) : hi), route.totalDistanceM))
 
-  for (let d = 0; d < route.totalDistanceM; d += step) at.push(sampleAtDistance(route, d)!)
-  at.push(sampleAtDistance(route, route.totalDistanceM)!)
+  const step = Math.max(ORDER_STEP_M, route.totalDistanceM / MAX_ORDER_SAMPLES, (route.totalDistanceM * timed.length) / MAX_ORDER_CELLS)
+  const grid: number[] = []
+
+  for (let d = 0; d < route.totalDistanceM; d += step) grid.push(d)
+  grid.push(route.totalDistanceM)
+
+  const bounds = [...new Set([...lows, ...highs])].filter((d) => d > 0 && d < route.totalDistanceM)
+  const at: RouteSample[] = (bounds.length ? [...new Set([...grid, ...bounds])].sort((a, b) => a - b) : grid).map((d) => sampleAtDistance(route, d)!)
 
   // ponytail: positions are the route sampled every ORDER_STEP_M, coarser past MAX_ORDER_SAMPLES or when photos × samples passes MAX_ORDER_CELLS (back pointers stay under ~8 MB), with flat-plane offsets, so an ordered photo lands within half a step of its best spot unless its own nearest point already fits the order; O(photos × samples) time and Uint16 back pointers per photo.
   const lat = Float64Array.from(at, (a) => a.lat)
@@ -60,7 +69,7 @@ function alongRoute(route: Route, photos: Photo[]): Map<Photo, NearestOnRoute> {
   let cost = new Float64Array(at.length)
   const from: Uint16Array[] = []
 
-  for (const p of timed) {
+  for (const [i, p] of timed.entries()) {
     const next = new Float64Array(at.length)
     const back = new Uint16Array(at.length)
     const { lat: y, lon: x } = p.gps!
@@ -75,7 +84,8 @@ function alongRoute(route: Route, photos: Photo[]): Map<Photo, NearestOnRoute> {
       }
 
       back[k] = arg
-      next[k] = best + Math.hypot((lon[k]! - x) * kx, lat[k]! - y)
+      const d = at[k]!.distanceM
+      next[k] = d < lows[i]! || d > highs[i]! ? Infinity : best + Math.hypot((lon[k]! - x) * kx, lat[k]! - y)
     }
 
     cost = next
@@ -94,8 +104,8 @@ function alongRoute(route: Route, photos: Photo[]): Map<Photo, NearestOnRoute> {
 
   for (const [i, p] of timed.entries()) {
     const own = nearest.get(p)!
-    const hi = chosen[i + 1] ?? Infinity
-    const d = own.routeDistanceM >= lo && own.routeDistanceM <= hi ? own.routeDistanceM : chosen[i]!
+    const hi = Math.min(chosen[i + 1] ?? Infinity, highs[i]!)
+    const d = own.routeDistanceM >= Math.max(lo, lows[i]!) && own.routeDistanceM <= hi ? own.routeDistanceM : chosen[i]!
 
     out.set(p, d === own.routeDistanceM ? own : { routeDistanceM: d, offsetM: distanceM(p.gps!, sampleAtDistance(route, d)!) })
     lo = d
@@ -134,6 +144,7 @@ export function buildTimeline(route: Route, photos: Photo[], pois: PoiOnRoute[])
     }
 
     const time = item.time ?? sampleAtDistance(route, d!)?.time ?? Infinity
+    if (item.kind === 'start') return [0, -Infinity, 0, 0]
     return timed ? [0, time, d!, RANK[item.kind]] : [0, d!, RANK[item.kind], time]
   }
 
