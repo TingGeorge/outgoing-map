@@ -526,7 +526,7 @@ describe('two tabs', () => {
   test('a newer version in another tab is not blocked, and this tab is told to reload', async () => {
     await storage.listTrips()
 
-    const newer = await openDB('hiking-memories', 4)
+    const newer = await openDB('hiking-memories', 5)
     newer.close()
 
     await expect(storage.listTrips()).rejects.toThrow('請重新整理這個頁面')
@@ -537,7 +537,7 @@ describe('two tabs', () => {
 })
 
 describe('upgrade from an older database', () => {
-  test.each([1, 2])('from version %i saved trips are recomputed once, a broken trip does not stop the others', async (version) => {
+  test.each([1, 2, 3])('from version %i saved trips are recomputed once, a broken trip does not stop the others', async (version) => {
     await deleteDB('hiking-memories')
 
     const fake = Date.UTC(2022, 11, 28, 6)

@@ -17,7 +17,7 @@ import type {
 import { renderImage } from './image'
 
 const DB_NAME = 'hiking-memories'
-const DB_VERSION = 3
+const DB_VERSION = 4
 
 const EXPORT_FORMAT = 'hiking-memories-trip'
 const EXPORT_VERSION = 1
@@ -110,7 +110,7 @@ function db(): Promise<IDBPDatabase<Schema>> {
         db.createObjectStore('blobs', { keyPath: ['photoId', 'size'] })
       }
 
-      if (oldVersion === 1 || oldVersion === 2) {
+      if (oldVersion >= 1 && oldVersion < DB_VERSION) {
         const write = tx as unknown as WriteTx
         void write.objectStore('trips').getAllKeys().then(async (ids) => {
           for (const id of ids) await refresh(write, id, false).catch((e: unknown) => console.warn('could not recompute trip', id, e))
