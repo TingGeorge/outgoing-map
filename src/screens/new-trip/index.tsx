@@ -397,6 +397,8 @@ export function NewTripScreen() {
 
   return (
     <Screen
+      wide="page"
+      className={s.form}
       bottom={
         <Button block onClick={create} disabled={!ready}>
           建立回憶
@@ -411,7 +413,7 @@ export function NewTripScreen() {
       </div>
 
       {formError && (
-        <div className={s.stack}>
+        <div className={`${s.stack} ${s.wideRow}`}>
           <Notice tone="error" title="沒有建立成功">
             {formError.message}
           </Notice>
@@ -506,7 +508,7 @@ export function NewTripScreen() {
         {!gpx && photos.length > 0 && <Notice tone="info">路線會由照片位置連成，匯入 GPX 會更準。</Notice>}
       </section>
 
-      <section className={s.section}>
+      <section className={`${s.section} ${s.wideRow}`}>
         <TextField
           label="這趟的名字"
           value={shownTitle}

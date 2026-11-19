@@ -839,6 +839,11 @@
 @media (min-width: 1024px) {
   .screen {
     max-width: 600px;
+    justify-content: center;
+  }
+
+  .screen:not(.wideFull) > .content {
+    flex: none;
   }
 
   .content:not(.bleed) {
@@ -847,10 +852,28 @@
 
   .screen.widePage {
     max-width: 1120px;
+    justify-content: flex-start;
   }
 
   .screen.wideFull {
     max-width: none;
+  }
+
+  .widePage > .content:not(.bleed) {
+    padding-left: calc(40px + var(--safe-left));
+    padding-right: calc(40px + var(--safe-right));
+  }
+
+  .widePage > .bottom {
+    position: static;
+    justify-content: flex-end;
+    padding: 0 calc(40px + var(--safe-right)) calc(max(var(--safe-bottom), 12px) + 40px) calc(40px + var(--safe-left));
+    background: none;
+  }
+
+  .widePage > .bottom > * {
+    width: auto;
+    min-width: 260px;
   }
 
   .screen:has(> .content > .ridgeHeader) {

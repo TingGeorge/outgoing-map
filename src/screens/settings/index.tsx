@@ -493,7 +493,7 @@ export function SettingsScreen() {
   const [hasKey] = useState(() => getKey() !== null)
 
   return (
-    <Screen>
+    <Screen wide="page" className={s.page}>
       <div className={s.top}>
         <IconButton
           label={hasKey ? '回首頁' : '回鑰匙教學'}
