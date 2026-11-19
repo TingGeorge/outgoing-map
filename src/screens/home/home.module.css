@@ -324,7 +324,6 @@
   }
 
   .scene svg {
-    aspect-ratio: auto;
     border-radius: var(--radius-sm);
   }
 }

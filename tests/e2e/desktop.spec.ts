@@ -124,3 +124,15 @@ test('narrow screens like the key tutorial sit in the middle of the window', asy
   expect(button.y + button.height).toBeLessThan(800)
   expect(await noSideScroll(page)).toBe(true)
 })
+
+test('in a short window the buttons of a long tutorial step stay in view', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 650 })
+  await page.goto('./#/welcome')
+  await page.getByRole('button', { name: '開始領取' }).click()
+
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeGreaterThan(800)
+  for (const button of [page.getByRole('link', { name: '開啟註冊頁' }), page.getByRole('button', { name: '我已經有鑰匙了' })]) {
+    const box = (await button.boundingBox())!
+    expect(box.y + box.height).toBeLessThanOrEqual(650)
+  }
+})
