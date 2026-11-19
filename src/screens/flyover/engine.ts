@@ -73,7 +73,6 @@ export interface CaptureView {
 
 export interface Flight {
   playing(): boolean
-  speed(): Speed
   setSpeed(speed: Speed): void
   restart(): void
   relayout(): void
@@ -434,8 +433,6 @@ export function startFlight(
   const flight: Flight = {
     playing: () => playing,
 
-    speed: () => speed,
-
     setSpeed(next) {
       speed = next
     },
@@ -612,12 +609,7 @@ export function startFlight(
       }
     })
 
-    m.on('resize', () => {
-      if (!hiker) return
-      frameHiker()
-      computeOverview()
-      applyOnce = true
-    })
+    m.on('resize', () => flight.relayout())
 
     m.once('style.load', () => {
       if (destroyed) return

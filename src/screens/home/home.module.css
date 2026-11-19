@@ -222,7 +222,7 @@
   }
 }
 
-@media (min-width: 900px) {
+@media (min-width: 1024px) {
   .recent {
     display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(260px, 2fr);

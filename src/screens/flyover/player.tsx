@@ -15,6 +15,7 @@ import {
   PlayIcon,
   Polaroid,
   PrevIcon,
+  ReplayIcon,
   ShareIcon,
   Spinner,
   VideoIcon,
@@ -181,6 +182,8 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
   const fractionRef = useRef(0)
   const drag = useRef<{ resume: boolean } | null>(null)
   const recBarRef = useRef<HTMLDivElement>(null)
+  const exportRef = useRef<HTMLButtonElement>(null)
+  const lastVideo = useRef<NonNullable<Video>['phase']>(undefined)
   const speedRef = useRef<Speed>(1)
   const recordingRef = useRef(false)
   const recording = useRef<VideoRecording | null>(null)
@@ -367,8 +370,18 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
     return () => URL.revokeObjectURL(videoUrl)
   }, [videoUrl])
 
+  const videoPhase = video?.phase
   useEffect(() => {
-    if (recordingRef.current && phase !== 'ready' && phase !== 'loading') stopVideo()
+    const was = lastVideo.current
+    lastVideo.current = videoPhase
+    if (videoPhase === 'recording') recBarRef.current?.querySelector('button')?.focus()
+    else if (!videoPhase && (was === 'recording' || was === 'done')) exportRef.current?.focus()
+  }, [videoPhase])
+
+  useEffect(() => {
+    if (phase === 'ready' || phase === 'loading') return
+    if (recordingRef.current) stopVideo()
+    else setVideo((v) => (v?.phase === 'ask' ? null : v))
   }, [phase])
 
   useEffect(() => {
@@ -487,7 +500,7 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
     >
       <h1 className="visually-hidden">立體播放{data ? `：${data.trip.title}` : ''}</h1>
 
-      <div ref={mapRef} key={attempt} className={mapContainer} />
+      <div ref={mapRef} key={attempt} className={mapContainer} inert={recordingNow} />
 
       {ready && (
         <>
@@ -591,36 +604,34 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
               {speed}×
             </button>
 
-            <div className={s.transport}>
-              {stops.length > 0 && (
-                <button type="button" className={s.side} aria-label="上一張照片" disabled={flight.active < 0 && flight.shown < 0} onClick={() => engine.current?.prev()}>
-                  <PrevIcon size={20} />
-                </button>
-              )}
+            {stops.length > 0 && (
+              <button type="button" className={s.side} aria-label="上一張照片" disabled={flight.active < 0 && flight.shown < 0} onClick={() => engine.current?.prev()}>
+                <PrevIcon size={20} />
+              </button>
+            )}
 
-              {flight.ended ? (
-                <Button variant="dark" icon={<PlayIcon size={18} />} onClick={() => engine.current?.play()}>
-                  重新播放
-                </Button>
-              ) : (
-                <button type="button" className={s.main} aria-label={flight.playing ? '暫停' : '播放'} onClick={() => engine.current?.toggle()}>
-                  {flight.playing ? <PauseIcon size={24} /> : <PlayIcon size={24} />}
-                </button>
-              )}
+            {flight.ended ? (
+              <button type="button" className={s.main} aria-label="重新播放" title="重新播放" onClick={() => engine.current?.play()}>
+                <ReplayIcon size={26} />
+              </button>
+            ) : (
+              <button type="button" className={s.main} aria-label={flight.playing ? '暫停' : '播放'} onClick={() => engine.current?.toggle()}>
+                {flight.playing ? <PauseIcon size={24} /> : <PlayIcon size={24} />}
+              </button>
+            )}
 
-              {stops.length > 0 && (
-                <button type="button" className={s.side} aria-label="下一張照片" disabled={flight.active + 1 >= stops.length} onClick={() => engine.current?.next()}>
-                  <NextIcon size={20} />
-                </button>
-              )}
-            </div>
+            {stops.length > 0 && (
+              <button type="button" className={s.side} aria-label="下一張照片" disabled={flight.active + 1 >= stops.length} onClick={() => engine.current?.next()}>
+                <NextIcon size={20} />
+              </button>
+            )}
 
             {format ? (
-              <button type="button" className={s.side} aria-label="匯出影片" title="匯出影片" onClick={askVideo}>
+              <button ref={exportRef} type="button" className={s.side} aria-label="匯出影片" title="匯出影片" onClick={askVideo}>
                 <VideoIcon size={20} />
               </button>
             ) : (
-              <span aria-hidden="true" />
+              <span className={s.spacer} aria-hidden="true" />
             )}
           </div>
 

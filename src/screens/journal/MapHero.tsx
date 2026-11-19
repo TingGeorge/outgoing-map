@@ -458,7 +458,7 @@ function MapProblem({ problem }: { problem: Problem }) {
   if (problem === 'offline') {
     return (
       <Notice tone="info" title="地圖需要網路">
-        現在連不上地圖服務。連上網路後重新整理，地圖就會出現；照片和日記都在下面。
+        現在連不上地圖服務。連上網路後重新整理，地圖就會出現；照片和日記照常可以看。
       </Notice>
     )
   }
@@ -466,7 +466,7 @@ function MapProblem({ problem }: { problem: Problem }) {
   if (problem === 'webgl') {
     return (
       <Notice tone="info" title="這個瀏覽器無法顯示地圖">
-        顯示地圖需要 WebGL，這台裝置的瀏覽器目前沒有開啟。路線的數字、照片和日記都在下面。
+        顯示地圖需要 WebGL，這台裝置的瀏覽器目前沒有開啟。路線的數字、照片和日記照常可以看。
       </Notice>
     )
   }

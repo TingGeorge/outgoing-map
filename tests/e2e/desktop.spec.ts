@@ -65,6 +65,12 @@ test('home uses the width of the window for the trips', async ({ page }) => {
   const tops = await cards.evaluateAll((els) => els.slice(1).map((e) => Math.round(e.getBoundingClientRect().top)))
   expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(40)
   expect(await noSideScroll(page)).toBe(true)
+
+  await page.setViewportSize({ width: 960, height: 800 })
+  const narrow = (await cards.first().boundingBox())!
+  const cover = (await cards.first().locator('> div').first().boundingBox())!
+  expect(narrow.width).toBeLessThanOrEqual(480)
+  expect(cover.width).toBeGreaterThan(narrow.width - 40)
 })
 
 test('forms stay a readable width', async ({ page }) => {

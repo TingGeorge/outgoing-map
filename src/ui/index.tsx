@@ -24,7 +24,6 @@ export interface ScreenProps {
   children: ReactNode
   bottom?: ReactNode
   bleed?: boolean
-  /** On wide screens, use the whole window instead of the phone-width column. */
   wide?: 'page' | 'full'
   className?: string
 }

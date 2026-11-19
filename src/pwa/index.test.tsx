@@ -109,6 +109,12 @@ describe('InstallHint', () => {
     expect(desk.el.textContent).toContain('安裝到電腦')
 
     document.body.innerHTML = ''
+    setNavigator({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36', platform: 'Win32', maxTouchPoints: 10 })
+    const touchLaptop = await render()
+    await fire()
+    expect(touchLaptop.el.textContent).toContain('安裝到電腦')
+
+    document.body.innerHTML = ''
     setNavigator({ userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36', platform: 'Linux armv8l', maxTouchPoints: 5 })
     const phone = await render()
     await fire()

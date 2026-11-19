@@ -155,18 +155,16 @@
 }
 
 .controls {
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 4px;
   min-height: 64px;
 }
 
-.transport {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(12px, 7vw, 32px);
+.spacer {
+  flex: none;
+  width: 48px;
 }
 
 .speed {
@@ -200,6 +198,17 @@
   background: var(--color-ink);
   color: var(--color-white);
   box-shadow: 0 8px 18px rgba(36, 53, 44, 0.3);
+}
+
+@media (max-width: 359px) {
+  .side {
+    width: 44px;
+    height: 44px;
+  }
+
+  .spacer {
+    width: 44px;
+  }
 }
 
 @media (hover: hover) {
@@ -297,12 +306,7 @@
 
   .controls {
     grid-area: controls;
-    display: flex;
     min-height: 0;
-    gap: 8px;
-  }
-
-  .transport {
     gap: 8px;
   }
 
@@ -313,6 +317,10 @@
   .side {
     width: 44px;
     height: 44px;
+  }
+
+  .spacer {
+    width: 44px;
   }
 
   .main {

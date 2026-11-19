@@ -81,7 +81,7 @@ export function isIOS(): boolean {
 }
 
 export function isDesktop(): boolean {
-  return navigator.maxTouchPoints === 0 && !/Android|Mobi/i.test(navigator.userAgent)
+  return !isIOS() && !/Android|Mobi/i.test(navigator.userAgent)
 }
 
 export function isMacSafari(): boolean {
@@ -122,7 +122,7 @@ export function InstallHint() {
 
   const ios = isIOS()
   const dock = !ios && !prompt && isMacSafari()
-  const desktop = !ios && isDesktop()
+  const desktop = isDesktop()
 
   if (dismissed || isStandalone() || (!ios && !prompt && !dock)) return null
 

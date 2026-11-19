@@ -339,6 +339,29 @@ test('the speed button cycles 1×, 2× and 4×, and a faster speed covers more g
   await expect(speed).toHaveAccessibleName('播放速度 1 倍')
 })
 
+test('on a narrow phone the controls fit in one row, also when the flight has ended', async ({ page }) => {
+  await fakeImagery(page)
+  await page.setViewportSize({ width: 320, height: 568 })
+  const { id } = await seed(page)
+  await open(page, id)
+
+  const fits = () =>
+    page.locator('[class*="controls"]').evaluate((row) => {
+      const box = row.getBoundingClientRect()
+      const items = Array.from(row.children, (el) => el.getBoundingClientRect())
+      return items.every((r, i) => r.left >= box.left - 0.5 && r.right <= box.right + 0.5 && r.height <= 64 && (i === 0 || r.left >= items[i - 1]!.right))
+    })
+
+  await expect(page.getByRole('button', { name: '下一張照片' })).toBeVisible()
+  expect(await fits()).toBe(true)
+
+  const slider = page.getByRole('slider', { name: '播放進度與海拔剖面' })
+  const track = (await slider.boundingBox())!
+  await page.mouse.click(track.x + track.width * 0.995, track.y + track.height / 2)
+  await expect(page.getByRole('button', { name: '重新播放' })).toBeVisible({ timeout: 20_000 })
+  expect(await fits()).toBe(true)
+})
+
 test('export as video asks for a speed, records with a cancel button, and Escape cancels', async ({ page }) => {
   await fakeImagery(page)
   const { id } = await seed(page, { photos: false })
@@ -360,6 +383,7 @@ test('export as video asks for a speed, records with a cancel button, and Escape
   await ask.getByRole('button', { name: '開始錄影' }).click()
   const bar = page.getByRole('group', { name: '錄製影片' })
   await expect(bar).toBeVisible()
+  await expect(bar.getByRole('button', { name: '取消' })).toBeFocused()
   await expect(root(page)).toHaveAttribute('data-recording', '')
   await expect(page.getByRole('button', { name: '關閉播放' })).toBeHidden()
   await expect(page.getByRole('slider')).toHaveCount(0)
@@ -370,6 +394,7 @@ test('export as video asks for a speed, records with a cancel button, and Escape
   await expect(page.getByText('已取消錄影。')).toBeVisible()
   await expect(page).toHaveURL(new RegExp(`#/trip/${id}/fly$`))
   await expect(page.getByRole('button', { name: '關閉播放' })).toBeVisible()
+  await expect(exportButton).toBeFocused()
 
   await exportButton.click()
   await page.getByRole('button', { name: '開始錄影' }).click()

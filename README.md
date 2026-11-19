@@ -103,7 +103,7 @@
 - 路由：`goBack(fallback)` 在 App 內有上一頁時等於瀏覽器的上一頁，從外部連結直接打開時改成換到 `fallback`。畫面的返回鈕都用它；要回到上一個畫面的操作不要用 `navigate` 往前推一頁。
 - 用詞：一趟紀錄叫「回憶」（量詞「篇」），檔案叫「GPX 檔」，地圖上的線叫「路線」，Thunderforest 的 API Key 叫「鑰匙」。
 - 立體播放的速度（`SPEEDS`：1、2、4）只加快飛行與照片停留，開場與結尾的鏡頭轉場仍是原本的長度。
-- 匯出影片（`src/screens/flyover/video.ts`）：把 MapLibre 的畫面在每次 `render` 時畫進另一個 2D canvas，再疊上標題、日期、已走距離與海拔、健行者、照片停靠點、照片（縮圖，同 App 的拍立得樣式）和影像來源標示，用 `canvas.captureStream` + `MediaRecorder` 錄成影片；格式依序選 MP4（H.264）或 WebM，瀏覽器都不支援時不顯示「匯出影片」。影片尺寸是地圖 canvas 的大小，縮到長邊不超過 1920、短邊不超過 1080。錄影會從頭播放一次（開場、飛行、結尾），結尾停穩後再多錄 0.7 秒才結束；錄影中切到背景、地圖失敗、按 Esc 或「取消」都會中止。做好後可以分享（`navigator.canShare` 支援檔案時）或下載，檔名 `${title}-${yyyy-mm-dd}-立體播放.mp4`。
+- 匯出影片（`src/screens/flyover/video.ts`）：把 MapLibre 的畫面在每次 `render` 時畫進另一個 2D canvas，再疊上標題、日期、已走距離與海拔、健行者、照片停靠點、照片（縮圖，同 App 的拍立得樣式）和影像來源標示，用 `canvas.captureStream` + `MediaRecorder` 錄成影片；格式依序選 MP4（H.264）或 WebM，瀏覽器都不支援時不顯示「匯出影片」。影片尺寸是開始錄影時地圖 canvas 的大小，縮到長邊不超過 1920、短邊不超過 1080；錄影中畫面大小改變（轉向、調整視窗）時影片尺寸不變，地圖等比例填滿、裁掉多出來的部分。錄影會從頭播放一次（開場、飛行、結尾），結尾停穩後再多錄 0.7 秒才結束；錄影中切到背景、地圖失敗、按 Esc 或「取消」都會中止。做好後可以分享（`navigator.canShare` 支援檔案時）或下載，檔名 `${title}-${yyyy-mm-dd}-立體播放.mp4`。
 - 寬螢幕：`Screen` 的 `wide`：`'page'`（首頁，最寬 1120px）、`'full'`（日誌，左邊地圖固定、右邊內容可捲動，1024px 以上）；其他畫面在 1024px 以上是 600px 的欄。
 - 畫面除了 welcome 與 home 都是延遲載入；載入失敗（例如新版 Service Worker 接手後還開著的舊頁面要舊的 chunk）時，連線中會自動重新載入一次（`sessionStorage` 記號防止重複重載）；離線或已重載過仍失敗就顯示重新載入的畫面，重新載入就是新版。Service Worker 預先快取所有 chunk，所以離線也打得開。
 - 字型：Google Fonts 的樣式表加了 `crossorigin`，WebKit 才會讓字型檔經過 Service Worker（不加的話 WebKit 完全不經過，`google-fonts-files` 不會出現）。第一次開啟時 Service Worker 還沒接手，`keepFontsOffline()`（在 `App.tsx` 呼叫）會在接手後把已經載入的字型檔再抓一次放進快取。離線時只有看過的字有手寫字型，其他字照字型堆疊退回。

@@ -124,6 +124,7 @@ export function recordFlight(flight: Flight, format: VideoFormat, overlay: Video
   let lastSecond = -1
 
   const end = () => {
+    if (finished) return
     finished = true
     flight.capture(null)
     pics.forEach((p) => p.img && URL.revokeObjectURL(p.img.src))
@@ -151,7 +152,7 @@ export function recordFlight(flight: Flight, format: VideoFormat, overlay: Video
         if (!url) return void (pic.failed = true)
         const img = new Image()
         img.onload = () => {
-          if (finished) URL.revokeObjectURL(url)
+          if (finished || pics.get(i) !== pic) URL.revokeObjectURL(url)
           else pic.img = img
         }
         img.onerror = () => {
@@ -176,22 +177,21 @@ export function recordFlight(flight: Flight, format: VideoFormat, overlay: Video
     out.width = w
     out.height = h
 
-    const stream = out.captureStream(FPS)
     try {
-      recorder = new MediaRecorder(stream, { mimeType: format.mime, videoBitsPerSecond: videoBitrate(w, h) })
+      const r = new MediaRecorder(out.captureStream(FPS), { mimeType: format.mime, videoBitsPerSecond: videoBitrate(w, h) })
+      r.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data)
+      r.onerror = fail
+      r.onstop = () => {
+        if (!delivering) return
+        delivering = false
+        if (chunks.length === 0) hooks.fail()
+        else hooks.done(new Blob(chunks, { type: format.type }))
+      }
+      recorder = r
+      r.start(1000)
     } catch {
       return fail()
     }
-
-    recorder.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data)
-    recorder.onerror = fail
-    recorder.onstop = () => {
-      if (!delivering) return
-      delivering = false
-      if (chunks.length === 0) hooks.fail()
-      else hooks.done(new Blob(chunks, { type: format.type }))
-    }
-    recorder.start(1000)
     started = performance.now()
   }
 
@@ -205,6 +205,14 @@ export function recordFlight(flight: Flight, format: VideoFormat, overlay: Video
   const draw = (view: CaptureView) => {
     if (finished) return
 
+    try {
+      paint(view)
+    } catch {
+      fail()
+    }
+  }
+
+  const paint = (view: CaptureView) => {
     if (!sized) {
       sized = true
       const size = videoSize(view.canvas.width, view.canvas.height)
@@ -214,21 +222,27 @@ export function recordFlight(flight: Flight, format: VideoFormat, overlay: Video
 
     const W = out.width
     const H = out.height
-    const k = W / Math.max(view.width, 1)
+    const vw = Math.max(view.width, 1)
+    const vh = Math.max(view.height, 1)
+    const k = Math.min(W / vw, H / vh)
+    const m = Math.max(W / vw, H / vh)
+    const ox = (W - vw * m) / 2
+    const oy = (H - vh * m) / 2
     const now = performance.now()
 
     ctx.fillStyle = COLOR.ground
     ctx.fillRect(0, 0, W, H)
-    ctx.drawImage(view.canvas, 0, 0, W, H)
+    ctx.drawImage(view.canvas, ox, oy, vw * m, vh * m)
 
     for (const [lon, lat] of view.stops) {
       const p = view.project(lon, lat)
-      if (p.x < -20 || p.y < -20 || p.x > view.width + 20 || p.y > view.height + 20) continue
-      dot(ctx, p.x * k, p.y * k, 5.5 * k, COLOR.white, COLOR.accent, 3 * k)
+      if (p.x < -20 || p.y < -20 || p.x > vw + 20 || p.y > vh + 20) continue
+      dot(ctx, ox + p.x * m, oy + p.y * m, 5.5 * k, COLOR.white, COLOR.accent, 3 * k, 4 * k)
     }
 
-    const hiker = view.project(view.hiker[0], view.hiker[1])
-    dot(ctx, hiker.x * k, hiker.y * k, 9.5 * k, COLOR.accent, COLOR.white, 3 * k, 8 * k)
+    const at = view.project(view.hiker[0], view.hiker[1])
+    const hiker = { x: ox + at.x * m, y: oy + at.y * m }
+    dot(ctx, hiker.x, hiker.y, 9.5 * k, COLOR.accent, COLOR.white, 3 * k, 8 * k)
 
     if (view.shown !== current) {
       if (view.shown >= 0) {
@@ -249,9 +263,7 @@ export function recordFlight(flight: Flight, format: VideoFormat, overlay: Video
       const age = now - changedAt
       const appear = current >= 0 ? easeOut(Math.min(age / POP_IN_MS, 1)) : 1 - Math.min(age / POP_OUT_MS, 1)
       if (current < 0 && age >= POP_OUT_MS) leaving = -1
-      else polaroid(ctx, view, k, showing, appear, hiker)
-    } else if (overlay.stops.length > 0 && !pics.has(0)) {
-      load(0)
+      else polaroid(ctx, k, showing, appear, hiker)
     }
 
     titleCard(ctx, k, W, overlay.title, `${overlay.subtitle}${overlay.subtitle ? '　' : ''}${overlay.status(view.info)}`)
@@ -271,17 +283,18 @@ export function recordFlight(flight: Flight, format: VideoFormat, overlay: Video
     }
   }
 
-  function polaroid(c: CanvasRenderingContext2D, view: CaptureView, k: number, i: number, appear: number, hiker: { x: number; y: number }) {
+  function polaroid(c: CanvasRenderingContext2D, k: number, i: number, appear: number, hiker: { x: number; y: number }) {
     const stop = overlay.stops[i]!
     const img = pics.get(i)?.img ?? null
-    const wide = view.width >= 720
-    const pw = (wide ? 260 : Math.min(210, view.width * 0.56)) * k
-    const px = (wide ? Math.max(36, view.width / 2 - 380) : 36) * k
+    const fw = c.canvas.width / k
+    const wide = fw >= 720
+    const pw = (wide ? 260 : Math.min(210, fw * 0.56)) * k
+    const px = (wide ? Math.max(36, fw / 2 - 380) : 36) * k
     const py = 108 * k
     const pad = 8 * k
     const iw = pw - pad * 2
     const ratio = img ? img.naturalHeight / Math.max(img.naturalWidth, 1) : 0.75
-    const ih = Math.min(iw * ratio, view.height * 0.34 * k)
+    const ih = Math.min(iw * ratio, c.canvas.height * 0.34)
     const foot = (stop.meta ? 46 : 34) * k
     const ph = pad + ih + foot
     const tilt = ((i % 2 ? 3 : -3) * Math.PI) / 180
@@ -331,8 +344,8 @@ export function recordFlight(flight: Flight, format: VideoFormat, overlay: Video
 
     const ax = px + pw * 0.55
     const ay = py + ph - 6 * k
-    const hx = hiker.x * k
-    const hy = hiker.y * k
+    const hx = hiker.x
+    const hy = hiker.y
     const dx = hx - ax
     const dy = hy - ay
     const len = Math.hypot(dx, dy)
@@ -407,12 +420,13 @@ export function recordFlight(flight: Flight, format: VideoFormat, overlay: Video
     c.restore()
   }
 
+  load(0)
   flight.capture(draw)
 
   return {
     cancel() {
       delivering = false
-      if (!finished) end()
+      end()
     },
   }
 }
@@ -421,7 +435,7 @@ function easeOut(k: number) {
   return 1 - (1 - k) ** 3
 }
 
-function dot(c: CanvasRenderingContext2D, x: number, y: number, r: number, fill: string, ring: string, width: number, shadow = 4) {
+function dot(c: CanvasRenderingContext2D, x: number, y: number, r: number, fill: string, ring: string, width: number, shadow: number) {
   c.save()
   c.shadowColor = 'rgba(0, 0, 0, 0.45)'
   c.shadowBlur = shadow
@@ -464,7 +478,7 @@ function ellipsis(c: CanvasRenderingContext2D, text: string, max: number): strin
 }
 
 function wrap(c: CanvasRenderingContext2D, text: string, max: number): string[] {
-  const words = text.split(/(?<=[ ,，、])/)
+  const words = text.match(/[^ ,，、]*[ ,，、]*/g)!.filter(Boolean)
   const rows: string[] = []
   let row = ''
 

@@ -111,6 +111,8 @@ export const PlayIcon = solid(<path d="M7 4.5v15l13-7.5z" />)
 
 export const PauseIcon = solid(<path d="M6 4h4.5v16H6zM13.5 4H18v16h-4.5z" />)
 
+export const ReplayIcon = stroke(<path d="M4 12a8 8 0 1 0 2.35-5.65L4 8.5M4 4v4.5h4.5" />, 2.4)
+
 export const PrevIcon = solid(<path d="M19 5v14l-10-7zM5 5h2.5v14H5z" />)
 
 export const NextIcon = solid(<path d="M5 5v14l10-7zM16.5 5H19v14h-2.5z" />)
