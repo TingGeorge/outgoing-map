@@ -46,7 +46,7 @@ function Privacy() {
   return (
     <div className={s.note}>
       <LockIcon size={20} />
-      <p>鑰匙只會留在你這台手機裡，不會傳給任何人。只有載入地圖時，會由這台手機直接交給 Thunderforest。</p>
+      <p>鑰匙只會留在你這台裝置裡，不會傳給任何人。只有載入地圖時，會由這台裝置直接交給 Thunderforest。</p>
     </div>
   )
 }
@@ -265,7 +265,7 @@ function KeySection() {
         open={confirming}
         danger
         title="清除這把鑰匙？"
-        message="清除後，這台手機上的地圖就不會載入，直到你再輸入一把鑰匙。你的回憶和照片不受影響。"
+        message="清除後，這台裝置上的地圖就不會載入，直到你再輸入一把鑰匙。你的回憶和照片不受影響。"
         confirmLabel="清除鑰匙"
         onConfirm={clear}
         onCancel={() => setConfirming(false)}
@@ -344,7 +344,7 @@ function DataSection() {
 
           {persisted === false && (
             <>
-              <p className={s.small}>尚未保護時，手機空間不足，瀏覽器可能會自己清掉這些資料。</p>
+              <p className={s.small}>尚未保護時，裝置空間不足，瀏覽器可能會自己清掉這些資料。</p>
               <div className={s.actions}>
                 <Button variant="dark" onClick={protect}>
                   要求保護資料

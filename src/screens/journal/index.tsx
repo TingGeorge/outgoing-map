@@ -213,7 +213,7 @@ function Journal({ data, reload }: { data: Data; reload: () => Promise<void> }) 
   )
 
   return (
-    <Screen bleed>
+    <Screen bleed wide="full" className={s.layout}>
       {hasMap ? (
         <MapHero
           route={route}
@@ -399,7 +399,7 @@ function TitleDialog({ open, trip, onClose, reload }: { open: boolean; trip: Tri
 
 function Skeleton() {
   return (
-    <Screen bleed>
+    <Screen bleed wide="full" className={s.layout}>
       <div className={s.hero} aria-hidden="true" />
       <div className={s.sheet} role="status" aria-label="日誌載入中">
         <span className={`${s.bone} ${s.boneDate}`} />

@@ -903,3 +903,56 @@
     overscroll-behavior: contain;
   }
 }
+
+@media (min-width: 1024px) {
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(440px, 38vw, 600px);
+    align-items: start;
+  }
+
+  .hero:not(.heroExpanded),
+  .noRoute {
+    grid-column: 1;
+    grid-row: 1;
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    aspect-ratio: auto;
+    --overlap: 0px;
+  }
+
+  .noRoute {
+    overflow: hidden;
+  }
+
+  .noRoute > svg {
+    position: absolute;
+    inset: auto 0 0;
+    width: 100%;
+    height: 60%;
+  }
+
+  .hero:not(.heroExpanded) .expand {
+    display: none;
+  }
+
+  .hero:not(.heroExpanded) :global(.maplibregl-ctrl-attrib) {
+    max-width: calc(100% - 24px);
+  }
+
+  .hero:not(.heroExpanded) :global(.maplibregl-cooperative-gesture-screen) {
+    padding-bottom: 0;
+  }
+
+  .sheet,
+  .noRoute + .sheet {
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 100dvh;
+    margin-top: 0;
+    padding: 36px 40px calc(48px + var(--safe-bottom));
+    border-radius: 0;
+    box-shadow: -12px 0 32px rgba(36, 53, 44, 0.08);
+  }
+}

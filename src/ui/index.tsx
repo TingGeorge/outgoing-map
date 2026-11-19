@@ -24,12 +24,13 @@ export interface ScreenProps {
   children: ReactNode
   bottom?: ReactNode
   bleed?: boolean
+  wide?: 'page' | 'full'
   className?: string
 }
 
-export function Screen({ children, bottom, bleed = false, className }: ScreenProps) {
+export function Screen({ children, bottom, bleed = false, wide, className }: ScreenProps) {
   return (
-    <div className={s.screen}>
+    <div className={cx(s.screen, wide === 'page' && s.widePage, wide === 'full' && s.wideFull)}>
       <main className={cx(s.content, bleed && s.bleed, className)}>{children}</main>
       {bottom && <div className={s.bottom}>{bottom}</div>}
     </div>

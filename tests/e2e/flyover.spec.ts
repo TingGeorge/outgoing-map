@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { fakeImagery } from './helpers'
 
 const READY = { timeout: 60_000 }
 
@@ -299,4 +300,141 @@ test('attribution links have a comfortable target and open in a new tab', async 
     )
     expect(hit).toEqual([name, name])
   }
+})
+
+test('the speed button cycles 1×, 2× and 4×, and a faster speed covers more ground', async ({ page }) => {
+  await fakeImagery(page)
+  const { id } = await seed(page, { photos: false })
+  await open(page, id)
+
+  const speed = page.getByRole('button', { name: /^播放速度/ })
+  await expect(speed).toHaveAccessibleName('播放速度 1 倍')
+  await expect(speed).toHaveText('1×')
+
+  const slider = page.getByRole('slider', { name: '播放進度與海拔剖面' })
+  const covered = async () => {
+    await page.getByRole('button', { name: '暫停' }).click()
+    await slider.focus()
+    await page.keyboard.press('Home')
+    await page.keyboard.press('PageUp')
+    const from = await distance(page)
+    await page.getByRole('button', { name: '播放', exact: true }).click()
+    await page.waitForTimeout(5000)
+    return (await distance(page)) - from
+  }
+
+  await expect(root(page)).toHaveAttribute('data-state', 'playing', { timeout: 20_000 })
+  const slow = await covered()
+
+  await speed.click()
+  await expect(speed).toHaveAccessibleName('播放速度 2 倍')
+  await speed.click()
+  await expect(speed).toHaveAccessibleName('播放速度 4 倍')
+  await expect(speed).toHaveText('4×')
+  const fast = await covered()
+
+  expect(fast).toBeGreaterThan(slow * 1.5)
+
+  await speed.click()
+  await expect(speed).toHaveAccessibleName('播放速度 1 倍')
+})
+
+test('on a narrow phone the controls fit in one row, also when the flight has ended', async ({ page }) => {
+  await fakeImagery(page)
+  await page.setViewportSize({ width: 320, height: 568 })
+  const { id } = await seed(page)
+  await open(page, id)
+
+  const fits = () =>
+    page.locator('[class*="controls"]').evaluate((row) => {
+      const box = row.getBoundingClientRect()
+      const items = Array.from(row.children, (el) => el.getBoundingClientRect())
+      return items.every((r, i) => r.left >= box.left - 0.5 && r.right <= box.right + 0.5 && r.height <= 64 && (i === 0 || r.left >= items[i - 1]!.right))
+    })
+
+  await expect(page.getByRole('button', { name: '下一張照片' })).toBeVisible()
+  expect(await fits()).toBe(true)
+
+  const slider = page.getByRole('slider', { name: '播放進度與海拔剖面' })
+  const track = (await slider.boundingBox())!
+  await page.mouse.click(track.x + track.width * 0.995, track.y + track.height / 2)
+  await expect(page.getByRole('button', { name: '重新播放' })).toBeVisible({ timeout: 20_000 })
+  expect(await fits()).toBe(true)
+})
+
+test('export as video asks for a speed, records with a cancel button, and Escape cancels', async ({ page }) => {
+  await fakeImagery(page)
+  const { id } = await seed(page, { photos: false })
+  await open(page, id)
+
+  const exportButton = page.getByRole('button', { name: '匯出影片' })
+  test.skip((await exportButton.count()) === 0, 'this browser cannot record a canvas')
+
+  await exportButton.click()
+  const ask = page.getByRole('dialog', { name: '匯出成影片' })
+  await expect(ask).toBeVisible()
+  await expect(root(page)).toHaveAttribute('data-state', 'paused')
+  await expect(ask.getByRole('radio', { name: /1×/ })).toBeChecked()
+
+  await ask.getByText('2×').click()
+  await expect(ask.getByRole('radio', { name: /2×/ })).toBeChecked()
+  await expect(page.getByRole('button', { name: /^播放速度/ })).toHaveAccessibleName('播放速度 2 倍')
+
+  await ask.getByRole('button', { name: '開始錄影' }).click()
+  const bar = page.getByRole('group', { name: '錄製影片' })
+  await expect(bar).toBeVisible()
+  await expect(bar.getByRole('button', { name: '取消' })).toBeFocused()
+  await expect(root(page)).toHaveAttribute('data-recording', '')
+  await expect(page.getByRole('button', { name: '關閉播放' })).toBeHidden()
+  await expect(page.getByRole('slider')).toHaveCount(0)
+  await expect(root(page)).toHaveAttribute('data-state', 'playing', { timeout: 10_000 })
+
+  await page.keyboard.press('Escape')
+  await expect(bar).toBeHidden()
+  await expect(page.getByText('已取消錄影。')).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`#/trip/${id}/fly$`))
+  await expect(page.getByRole('button', { name: '關閉播放' })).toBeVisible()
+  await expect(exportButton).toBeFocused()
+
+  await exportButton.click()
+  await page.getByRole('button', { name: '開始錄影' }).click()
+  await expect(bar).toBeVisible()
+  await bar.getByRole('button', { name: '取消' }).click()
+  await expect(bar).toBeHidden()
+  await expect(page.getByRole('dialog', { name: '影片做好了' })).toHaveCount(0)
+})
+
+test('export as video records the whole flight and offers the file', async ({ page }) => {
+  test.setTimeout(360_000)
+  await fakeImagery(page)
+  const { id } = await seed(page)
+  await open(page, id)
+
+  const exportButton = page.getByRole('button', { name: '匯出影片' })
+  test.skip((await exportButton.count()) === 0, 'this browser cannot record a canvas')
+
+  await exportButton.click()
+  await page.getByText('4×').click()
+  await page.getByRole('button', { name: '開始錄影' }).click()
+
+  const done = page.getByRole('dialog', { name: '影片做好了' })
+  await expect(done).toBeVisible({ timeout: 300_000 })
+  await expect(root(page)).toHaveAttribute('data-state', 'ended')
+  await expect(page.getByRole('group', { name: '錄製影片' })).toHaveCount(0)
+
+  const seconds = await done.locator('video').evaluate(
+    (v: HTMLVideoElement) =>
+      new Promise<number>((resolve) => {
+        const read = () => (Number.isFinite(v.duration) ? resolve(v.duration) : ((v.currentTime = 1e9), v.addEventListener('durationchange', () => resolve(v.duration), { once: true })))
+        if (v.readyState >= 1) read()
+        else v.addEventListener('loadedmetadata', read, { once: true })
+      }),
+  )
+  expect(seconds).toBeGreaterThan(5)
+
+  const download = page.waitForEvent('download')
+  await done.getByRole('button', { name: /^下載/ }).last().click()
+  const file = await download
+  expect(file.suggestedFilename()).toMatch(/^合歡北峰-2026-11-07-立體播放\.(mp4|webm)$/)
+  await expect(done).toHaveCount(0)
 })

@@ -98,6 +98,36 @@ describe('InstallHint', () => {
     expect(el.innerHTML).toBe('')
   })
 
+  it('words the install button for a computer on desktop and for the home screen on a phone', async () => {
+    const fire = async () => {
+      const event = Object.assign(new Event('beforeinstallprompt', { cancelable: true }), { prompt: vi.fn(async () => ({})) })
+      await act(async () => { window.dispatchEvent(event) })
+    }
+
+    const desk = await render()
+    await fire()
+    expect(desk.el.textContent).toContain('安裝到電腦')
+
+    document.body.innerHTML = ''
+    setNavigator({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36', platform: 'Win32', maxTouchPoints: 10 })
+    const touchLaptop = await render()
+    await fire()
+    expect(touchLaptop.el.textContent).toContain('安裝到電腦')
+
+    document.body.innerHTML = ''
+    setNavigator({ userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36', platform: 'Linux armv8l', maxTouchPoints: 5 })
+    const phone = await render()
+    await fire()
+    expect(phone.el.textContent).toContain('安裝到主畫面')
+  })
+
+  it('tells Safari on a Mac to add the app to the Dock', async () => {
+    setNavigator({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15' })
+    const { el } = await render()
+    expect(el.textContent).toContain('加入 Dock')
+    expect(el.querySelector('button:not([aria-label])')).toBeNull()
+  })
+
   it('remembers the dismissal', async () => {
     setNavigator({ userAgent: IPHONE })
     const first = await render()
