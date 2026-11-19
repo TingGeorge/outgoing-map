@@ -22,8 +22,8 @@ const RAD = Math.PI / 180
 
 export const CHASE = { backM: 1300, heightM: 520, focusY: 0.66 }
 
-const INTRO_MS = 4000
-const OUTRO_MS = 3000
+export const INTRO_MS = 4000
+export const OUTRO_MS = 3000
 const JUMP_MS = 900
 const RESUME_MS = 1400
 const READY_TIMEOUT_MS = 25_000
@@ -55,8 +55,29 @@ export interface FlightHooks {
   insets(): { top: number; bottom: number }
 }
 
+export const SPEEDS = [1, 2, 4] as const
+export type Speed = (typeof SPEEDS)[number]
+
+export interface CaptureView {
+  canvas: HTMLCanvasElement
+  width: number
+  height: number
+  project(lon: number, lat: number): { x: number; y: number }
+  hiker: [number, number]
+  stops: [number, number][]
+  shown: number
+  ended: boolean
+  settled: boolean
+  info: FrameInfo
+}
+
 export interface Flight {
   playing(): boolean
+  speed(): Speed
+  setSpeed(speed: Speed): void
+  restart(): void
+  relayout(): void
+  capture(draw: ((view: CaptureView) => void) | null): void
   play(): void
   pause(): void
   toggle(): void
@@ -105,6 +126,8 @@ export function startFlight(
 
   let t = 0
   let last = 0
+  let speed: Speed = 1
+  let draw: ((view: CaptureView) => void) | null = null
   let playing = false
   let ended = false
   let mode: 'overview' | 'chase' = 'overview'
@@ -287,7 +310,7 @@ export function startFlight(
     last = now
 
     const frozen = transition?.freeze === true
-    if (playing && !frozen) t += dt
+    if (playing && !frozen) t += dt * speed
 
     if (playing && t >= timeline.duration) {
       t = timeline.duration
@@ -358,6 +381,7 @@ export function startFlight(
 
     hooks.frame(info)
     emit()
+    if (draw) m.triggerRepaint()
   }
 
   const goTo = (time: number, ms: number) => {
@@ -368,8 +392,76 @@ export function startFlight(
     blendTo(ms)
   }
 
+  const stopPoints: [number, number][] = stopsM.map((at) => {
+    const i = Math.round(Math.min(at / (path.stepM || 1), path.count - 1))
+    return [path.lon[i]!, path.lat[i]!]
+  })
+
+  const capturePoint: [number, number] = [0, 0]
+  const view: CaptureView = {
+    canvas: null as unknown as HTMLCanvasElement,
+    width: 0,
+    height: 0,
+    project: (lon, lat) => {
+      capturePoint[0] = lon
+      capturePoint[1] = lat
+      return map!.project(capturePoint)
+    },
+    hiker: [0, 0],
+    stops: stopPoints,
+    shown: -1,
+    ended: false,
+    settled: false,
+    info,
+  }
+
+  const onRender = () => {
+    if (!draw || !map || !hiker || !isReady) return
+
+    const c = map.getContainer()
+    const at = hiker.getLngLat()
+    view.canvas = map.getCanvas()
+    view.width = c.clientWidth
+    view.height = c.clientHeight
+    view.hiker[0] = at.lng
+    view.hiker[1] = at.lat
+    view.shown = sample.stop
+    view.ended = ended
+    view.settled = ended && transition === null
+    draw(view)
+  }
+
   const flight: Flight = {
     playing: () => playing,
+
+    speed: () => speed,
+
+    setSpeed(next) {
+      speed = next
+    },
+
+    restart() {
+      if (!map || !isReady) return
+      playing = false
+      ended = false
+      t = 0
+      mode = 'overview'
+      transition = null
+      snap = true
+      applyOnce = true
+    },
+
+    relayout() {
+      if (!map || !hiker) return
+      frameHiker()
+      computeOverview()
+      applyOnce = true
+    },
+
+    capture(next) {
+      draw = next
+      if (next) map?.triggerRepaint()
+    },
 
     play() {
       if (!map || !isReady || playing) return
@@ -511,6 +603,7 @@ export function startFlight(
     })
 
     m.on('webglcontextlost', () => hooks.fail('map'))
+    m.on('render', onRender)
 
     m.on('movestart', (e) => {
       if (e.originalEvent && isReady) {
@@ -544,12 +637,10 @@ export function startFlight(
         }
       }
 
-      for (const at of stopsM) {
-        const f = Math.min(at / (path.stepM || 1), path.count - 1)
-        const i = Math.round(f)
+      for (const at of stopPoints) {
         const el = document.createElement('div')
         el.className = s.stop!
-        new mgl.Marker({ element: el, opacityWhenCovered: '0.4' }).setLngLat([path.lon[i]!, path.lat[i]!]).addTo(m)
+        new mgl.Marker({ element: el, opacityWhenCovered: '0.4' }).setLngLat(at).addTo(m)
       }
 
       const me = document.createElement('div')

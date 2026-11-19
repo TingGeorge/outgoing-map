@@ -34,7 +34,7 @@ function PrivacyNote() {
   return (
     <div className={s.note}>
       <LockIcon size={20} />
-      <p>鑰匙只會留在你這台手機裡，不會傳給任何人。只有載入地圖時，會由這台手機直接交給 Thunderforest。</p>
+      <p>鑰匙只會留在你這台裝置裡，不會傳給任何人。只有載入地圖時，會由這台裝置直接交給 Thunderforest。</p>
     </div>
   )
 }

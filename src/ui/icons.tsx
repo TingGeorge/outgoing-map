@@ -125,6 +125,14 @@ export const MoreIcon = solid(
 
 export const ShareIcon = stroke(<path d="M12 15V4M8 8l4-4 4 4M6 12v7a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-7" />, 2)
 
+export const VideoIcon = stroke(
+  <>
+    <rect x="3" y="6.5" width="12.5" height="11" rx="2" />
+    <path d="M15.5 10.5l5-3v9l-5-3z" />
+  </>,
+  2,
+)
+
 export const MapIcon = stroke(<path d="M3.5 6.5l5.5-2 6 2 5.5-2v13l-5.5 2-6-2-5.5 2zM9 4.5v13M15 6.5v13" />, 2)
 
 export const MountainIcon = stroke(<path d="M2.5 19l6.5-11 4 6.5 2.5-3.5 6 8zM9 8l-1.5 2.5L9 10l1.5 1z" />, 2)

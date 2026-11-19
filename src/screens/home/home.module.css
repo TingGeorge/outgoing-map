@@ -209,3 +209,63 @@
 .chips > * {
   white-space: nowrap;
 }
+
+@media (hover: hover) {
+  .recent,
+  .polaroidLink {
+    transition: transform 200ms var(--ease-out);
+  }
+
+  .recent:hover,
+  .polaroidLink:hover {
+    transform: translateY(-3px);
+  }
+}
+
+@media (min-width: 900px) {
+  .recent {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(260px, 2fr);
+    align-items: center;
+    padding: 12px;
+  }
+
+  .cover {
+    height: clamp(260px, 28vw, 360px);
+  }
+
+  .recentBody {
+    gap: 16px;
+    padding: 12px 20px 12px 28px;
+  }
+
+  .recentTitleRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .recentTitle {
+    font-size: var(--text-3xl);
+    line-height: 1.3;
+  }
+
+  .polaroids {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 30px 26px;
+  }
+
+  .polaroidLink:nth-child(even) {
+    margin-top: 0;
+  }
+
+  .polaroidLink:nth-child(4n + 2),
+  .polaroidLink:nth-child(4n + 4) {
+    margin-top: 14px;
+  }
+
+  .welcome,
+  .skeleton {
+    width: 100%;
+    max-width: 640px;
+  }
+}

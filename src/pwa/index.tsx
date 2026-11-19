@@ -80,6 +80,15 @@ export function isIOS(): boolean {
   return /iPhone|iPad|iPod/.test(ua) || iPadOS
 }
 
+export function isDesktop(): boolean {
+  return navigator.maxTouchPoints === 0 && !/Android|Mobi/i.test(navigator.userAgent)
+}
+
+export function isMacSafari(): boolean {
+  const ua = navigator.userAgent
+  return isDesktop() && /Macintosh/.test(ua) && /Safari\//.test(ua) && /Version\/(1[7-9]|[2-9]\d)/.test(ua) && !/Chrome|Chromium|CriOS|Edg|Firefox|OPR/.test(ua)
+}
+
 function wasDismissed(): boolean {
   try {
     return localStorage.getItem(DISMISS_KEY) === '1'
@@ -112,8 +121,10 @@ export function InstallHint() {
   }, [])
 
   const ios = isIOS()
+  const dock = !ios && !prompt && isMacSafari()
+  const desktop = !ios && isDesktop()
 
-  if (dismissed || isStandalone() || (!ios && !prompt)) return null
+  if (dismissed || isStandalone() || (!ios && !prompt && !dock)) return null
 
   const dismiss = () => {
     try {
@@ -132,20 +143,24 @@ export function InstallHint() {
     <Card tone="moss" radius="md">
       <div className={s.hint}>
         <div className={s.head}>
-          <h2 className={s.title}>加到主畫面，更像 App</h2>
+          <h2 className={s.title}>{desktop ? '安裝到電腦，更像 App' : '加到主畫面，更像 App'}</h2>
           <button type="button" className={s.close} aria-label="關閉提示" onClick={dismiss}>
             <CloseIcon />
           </button>
         </div>
 
-        <p className={s.text}>全螢幕、像 App 一樣開啟，資料也比較不會被瀏覽器清掉。</p>
+        <p className={s.text}>
+          {desktop ? '有自己的視窗，從 Dock、開始選單或應用程式清單直接打開，資料也比較不會被瀏覽器清掉。' : '全螢幕、像 App 一樣開啟，資料也比較不會被瀏覽器清掉。'}
+        </p>
 
         {ios ? (
           <p className={s.text}>
             點下方工具列的 <ShareIcon /> 分享，再選「加入主畫面」。
           </p>
+        ) : dock ? (
+          <p className={s.text}>在 Safari 上方的選單列選「檔案」，再選「加入 Dock」。</p>
         ) : (
-          <Button onClick={install}>安裝到主畫面</Button>
+          <Button onClick={install}>{desktop ? '安裝到電腦' : '安裝到主畫面'}</Button>
         )}
       </div>
     </Card>

@@ -6,6 +6,8 @@ import { getPhotoUrl } from '../../storage'
 import {
   Button,
   CloseIcon,
+  Dialog,
+  DownloadIcon,
   IconButton,
   NextIcon,
   Notice,
@@ -13,13 +15,18 @@ import {
   PlayIcon,
   Polaroid,
   PrevIcon,
+  ShareIcon,
   Spinner,
+  VideoIcon,
+  formatDateRange,
   formatKm,
   formatMetres,
   formatTime,
+  toast,
 } from '../../ui'
-import { startFlight, type FailReason, type Flight, type FlightState } from './engine'
+import { SPEEDS, startFlight, type FailReason, type Flight, type FlightState, type Speed } from './engine'
 import { hudSteps, type HudSteps } from './flight'
+import { recordFlight, videoFileName, videoFormat, videoSeconds, type VideoRecording } from './video'
 import type { FlightData } from './index'
 import s from './flyover.module.css'
 
@@ -31,6 +38,28 @@ const FAILURE: Record<FailReason, { title: string; text: string }> = {
   network: { title: '立體畫面需要網路連線', text: '地形和空拍影像要從網路載入。連上網路後再試一次。' },
   map: { title: '立體畫面載入失敗', text: '地圖沒有順利開啟，請稍後再試一次。' },
 }
+
+const plain = (html: string) => html.replace(/<[^>]*>/g, '')
+
+function clock(seconds: number) {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
+
+function about(seconds: number) {
+  const m = Math.floor(seconds / 60)
+  const sec = seconds % 60
+  return m ? `${m} 分${sec ? ` ${sec} 秒` : '鐘'}` : `${sec} 秒`
+}
+
+function sizeLabel(bytes: number) {
+  return bytes >= 1_000_000 ? `${(bytes / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1000))} KB`
+}
+
+type Video =
+  | { phase: 'ask' }
+  | { phase: 'recording'; fraction: number; seconds: number }
+  | { phase: 'done'; file: File; url: string; share: boolean }
+  | null
 
 function profileShape(data: FlightData) {
   const { profile, path } = data
@@ -134,6 +163,8 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
   const [shownPhoto, setShownPhoto] = useState(-1)
   const [leaving, setLeaving] = useState(false)
   const [enlarged, setEnlarged] = useState(false)
+  const [speed, setSpeed] = useState<Speed>(1)
+  const [video, setVideo] = useState<Video>(null)
 
   const mapRef = useRef<HTMLDivElement>(null)
   const topRef = useRef<HTMLDivElement>(null)
@@ -149,6 +180,12 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
   const engine = useRef<Flight | null>(null)
   const fractionRef = useRef(0)
   const drag = useRef<{ resume: boolean } | null>(null)
+  const recBarRef = useRef<HTMLDivElement>(null)
+  const speedRef = useRef<Speed>(1)
+  const recordingRef = useRef(false)
+  const recording = useRef<VideoRecording | null>(null)
+  const format = useMemo(videoFormat, [])
+  const recordingNow = video?.phase === 'recording'
 
   const shape = useMemo(() => (data ? profileShape(data) : null), [data])
   const clipId = `flight-clip-${attempt}`
@@ -180,10 +217,13 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
           setLeaving(true)
         }
       },
-      insets: () => ({
-        top: topRef.current ? topRef.current.getBoundingClientRect().bottom : 80,
-        bottom: cardRef.current ? innerHeight - cardRef.current.getBoundingClientRect().top : 240,
-      }),
+      insets: () =>
+        recordingRef.current
+          ? { top: 96, bottom: recBarRef.current ? innerHeight - recBarRef.current.getBoundingClientRect().top : 120 }
+          : {
+              top: topRef.current ? topRef.current.getBoundingClientRect().bottom : 80,
+              bottom: cardRef.current ? innerHeight - cardRef.current.getBoundingClientRect().top : 240,
+            },
       frame: (info) => {
         fractionRef.current = info.fraction
 
@@ -256,16 +296,80 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
     })
 
     engine.current = f
+    f.setSpeed(speedRef.current)
 
-    const onVisibility = () => document.hidden && f.pause()
+    const onVisibility = () => {
+      if (!document.hidden) return
+      if (recordingRef.current) stopVideo('切到別的畫面時沒辦法錄影，這次的錄影已取消。')
+      f.pause()
+    }
     document.addEventListener('visibilitychange', onVisibility)
 
     return () => {
       document.removeEventListener('visibilitychange', onVisibility)
+      recording.current?.cancel()
+      recording.current = null
       f.destroy()
       engine.current = null
     }
   }, [data, shape, attempt])
+
+  useEffect(() => {
+    const f = engine.current
+    if (!recordingNow || !f || !format || !data) return
+
+    recordingRef.current = true
+    f.restart()
+    f.relayout()
+
+    recording.current = recordFlight(
+      f,
+      format,
+      {
+        title: data.trip.title,
+        subtitle: formatDateRange(data.trip.startAt, data.trip.endAt),
+        stops: data.stops.map((p) => ({
+          caption: p.caption,
+          meta: p.takenAt !== null ? formatTime(p.takenAt) : undefined,
+          url: () => getPhotoUrl(p.id, 'thumb'),
+        })),
+        attribution: [`影像 ${plain(NLSC_ATTRIBUTION)}`, plain(TERRAIN_ATTRIBUTION)],
+        status: (info) => `已走 ${formatKm(info.distanceM)} 公里${Number.isNaN(info.eleM) ? '' : `・海拔 ${formatMetres(info.eleM)} 公尺`}`,
+      },
+      {
+        progress: (fraction, seconds) => setVideo((v) => (v?.phase === 'recording' ? { phase: 'recording', fraction, seconds } : v)),
+        done: (blob) => {
+          const file = new File([blob], videoFileName(data.trip.title, data.trip.startAt ?? data.trip.createdAt, format.ext), { type: format.type })
+          let share = false
+          try {
+            share = navigator.canShare?.({ files: [file] }) ?? false
+          } catch {}
+          setVideo({ phase: 'done', file, url: URL.createObjectURL(file), share })
+        },
+        fail: () => stopVideo('影片沒有錄成功，請再試一次。', 'error'),
+      },
+    )
+
+    const go = window.setTimeout(() => f.play(), 600)
+
+    return () => {
+      clearTimeout(go)
+      recordingRef.current = false
+      recording.current?.cancel()
+      recording.current = null
+      engine.current?.relayout()
+    }
+  }, [recordingNow])
+
+  const videoUrl = video?.phase === 'done' ? video.url : null
+  useEffect(() => {
+    if (!videoUrl) return
+    return () => URL.revokeObjectURL(videoUrl)
+  }, [videoUrl])
+
+  useEffect(() => {
+    if (recordingRef.current && phase !== 'ready' && phase !== 'loading') stopVideo()
+  }, [phase])
 
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -273,13 +377,15 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
       const onControl = target.closest('button, a, [role="slider"], input, textarea')
 
       if (e.key === 'Escape') {
+        if (video && video.phase !== 'recording') return
         e.preventDefault()
-        if (enlarged) setEnlarged(false)
+        if (recordingNow) stopVideo('已取消錄影。')
+        else if (enlarged) setEnlarged(false)
         else close()
         return
       }
 
-      if (enlarged || phase !== 'ready') return
+      if (enlarged || video || phase !== 'ready') return
 
       if (e.key === ' ' && !onControl) {
         e.preventDefault()
@@ -313,8 +419,56 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
   }
 
   const openPhoto = () => {
+    if (recordingRef.current) return
     engine.current?.pause()
     setEnlarged(true)
+  }
+
+  const changeSpeed = (next: Speed) => {
+    speedRef.current = next
+    setSpeed(next)
+    engine.current?.setSpeed(next)
+  }
+
+  const cycleSpeed = () => changeSpeed(SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]!)
+
+  const askVideo = () => {
+    engine.current?.pause()
+    setEnlarged(false)
+    setVideo({ phase: 'ask' })
+  }
+
+  function stopVideo(message?: string, tone?: 'error') {
+    recording.current?.cancel()
+    recording.current = null
+    engine.current?.pause()
+    setVideo(null)
+    if (message) toast(message, tone ? { tone } : undefined)
+  }
+
+  const deliverVideo = async (file: File, share: boolean) => {
+    if (share) {
+      try {
+        await navigator.share({ files: [file], title: data?.trip.title.slice(0, 80) })
+        setVideo(null)
+        return
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') return
+      }
+    }
+
+    const url = URL.createObjectURL(file)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = file.name
+    a.rel = 'noopener'
+    document.body.append(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+
+    setVideo(null)
+    toast(`已下載 ${file.name}`, { tone: 'success' })
   }
 
   const stops = data?.stops ?? []
@@ -325,7 +479,12 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
   const counter = stops.length === 0 ? null : flight.active >= 0 ? `第 ${flight.active + 1} 張，共 ${stops.length} 張` : `共 ${stops.length} 張照片`
 
   return (
-    <div className={s.root} data-state={flight.ended ? 'ended' : flight.playing ? 'playing' : 'paused'} data-phase={phase}>
+    <div
+      className={s.root}
+      data-state={flight.ended ? 'ended' : flight.playing ? 'playing' : 'paused'}
+      data-phase={phase}
+      data-recording={recordingNow ? '' : undefined}
+    >
       <h1 className="visually-hidden">立體播放{data ? `：${data.trip.title}` : ''}</h1>
 
       <div ref={mapRef} key={attempt} className={mapContainer} />
@@ -351,7 +510,7 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
         </>
       )}
 
-      <div ref={topRef} className={s.top}>
+      <div ref={topRef} className={s.top} hidden={recordingNow}>
         <IconButton label="關閉播放" onClick={close}>
           <CloseIcon size={20} />
         </IconButton>
@@ -366,13 +525,13 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
         )}
       </div>
 
-      {ready && trouble && !troubleHidden && (
+      {ready && trouble && !troubleHidden && !recordingNow && (
         <div className={s.trouble}>
           <Notice tone="warning" onDismiss={() => setTroubleHidden(true)}>網路不穩，部分地形或空拍影像沒有載入。立體畫面需要網路連線。</Notice>
         </div>
       )}
 
-      {data && shape && (
+      {data && shape && !recordingNow && (
         <div ref={cardRef} className={s.card} inert={!ready}>
           <div className={s.cardHead}>
             <div className={s.title}>{shown?.caption || data.trip.title}</div>
@@ -428,26 +587,40 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
           </div>
 
           <div className={s.controls}>
-            {stops.length > 0 && (
-              <button type="button" className={s.side} aria-label="上一張照片" disabled={flight.active < 0 && flight.shown < 0} onClick={() => engine.current?.prev()}>
-                <PrevIcon size={20} />
-              </button>
-            )}
+            <button type="button" className={`${s.side} ${s.speed}`} aria-label={`播放速度 ${speed} 倍`} title="切換播放速度" onClick={cycleSpeed}>
+              {speed}×
+            </button>
 
-            {flight.ended ? (
-              <Button variant="dark" icon={<PlayIcon size={18} />} onClick={() => engine.current?.play()}>
-                重新播放
-              </Button>
+            <div className={s.transport}>
+              {stops.length > 0 && (
+                <button type="button" className={s.side} aria-label="上一張照片" disabled={flight.active < 0 && flight.shown < 0} onClick={() => engine.current?.prev()}>
+                  <PrevIcon size={20} />
+                </button>
+              )}
+
+              {flight.ended ? (
+                <Button variant="dark" icon={<PlayIcon size={18} />} onClick={() => engine.current?.play()}>
+                  重新播放
+                </Button>
+              ) : (
+                <button type="button" className={s.main} aria-label={flight.playing ? '暫停' : '播放'} onClick={() => engine.current?.toggle()}>
+                  {flight.playing ? <PauseIcon size={24} /> : <PlayIcon size={24} />}
+                </button>
+              )}
+
+              {stops.length > 0 && (
+                <button type="button" className={s.side} aria-label="下一張照片" disabled={flight.active + 1 >= stops.length} onClick={() => engine.current?.next()}>
+                  <NextIcon size={20} />
+                </button>
+              )}
+            </div>
+
+            {format ? (
+              <button type="button" className={s.side} aria-label="匯出影片" title="匯出影片" onClick={askVideo}>
+                <VideoIcon size={20} />
+              </button>
             ) : (
-              <button type="button" className={s.main} aria-label={flight.playing ? '暫停' : '播放'} onClick={() => engine.current?.toggle()}>
-                {flight.playing ? <PauseIcon size={24} /> : <PlayIcon size={24} />}
-              </button>
-            )}
-
-            {stops.length > 0 && (
-              <button type="button" className={s.side} aria-label="下一張照片" disabled={flight.active + 1 >= stops.length} onClick={() => engine.current?.next()}>
-                <NextIcon size={20} />
-              </button>
+              <span aria-hidden="true" />
             )}
           </div>
 
@@ -456,6 +629,87 @@ export function Player({ tripId, data }: { tripId: string; data: FlightData | nu
             <span dangerouslySetInnerHTML={{ __html: TERRAIN_ATTRIBUTION }} />
           </p>
         </div>
+      )}
+
+      {recordingNow && (
+        <>
+          <div className={s.shield} />
+          <div ref={recBarRef} className={s.recBar} role="group" aria-label="錄製影片">
+            <span className={s.recDot} aria-hidden="true" />
+            <div className={s.recText}>
+              <strong>正在錄製影片</strong>
+              <span>
+                {clock(video.seconds)}・{Math.round(video.fraction * 100)}%
+              </span>
+            </div>
+            <Button variant="ghost" onClick={() => stopVideo('已取消錄影。')}>
+              取消
+            </Button>
+            <span className={s.recProgress} style={{ transform: `scaleX(${video.fraction})` }} aria-hidden="true" />
+          </div>
+        </>
+      )}
+
+      {data && format && (
+        <Dialog
+          open={video?.phase === 'ask'}
+          onClose={() => setVideo(null)}
+          title="匯出成影片"
+          actions={
+            <>
+              <Button variant="ghost" onClick={() => setVideo(null)}>
+                取消
+              </Button>
+              <Button variant="dark" icon={<VideoIcon size={20} />} onClick={() => setVideo({ phase: 'recording', fraction: 0, seconds: 0 })}>
+                開始錄影
+              </Button>
+            </>
+          }
+        >
+          <p>會從頭播放一次，同時錄成影片，可以存下來或分享給朋友。錄影時請停在這個畫面。</p>
+          <fieldset className={s.speeds}>
+            <legend>影片速度</legend>
+            {SPEEDS.map((n) => (
+              <label key={n} className={s.speedOption}>
+                <input type="radio" name="video-speed" checked={speed === n} onChange={() => changeSpeed(n)} />
+                <strong>{n}×</strong>
+                <span>約 {about(videoSeconds(data.timeline.duration, n))}</span>
+              </label>
+            ))}
+          </fieldset>
+        </Dialog>
+      )}
+
+      {video?.phase === 'done' && (
+        <Dialog
+          open
+          onClose={() => setVideo(null)}
+          title="影片做好了"
+          actions={
+            <>
+              <Button variant="ghost" onClick={() => setVideo(null)}>
+                關閉
+              </Button>
+              {video.share && (
+                <Button variant="ghost" icon={<DownloadIcon size={20} />} onClick={() => void deliverVideo(video.file, false)}>
+                  下載
+                </Button>
+              )}
+              <Button
+                variant="dark"
+                icon={video.share ? <ShareIcon size={20} /> : <DownloadIcon size={20} />}
+                onClick={() => void deliverVideo(video.file, video.share)}
+              >
+                {video.share ? '分享影片' : '下載影片'}
+              </Button>
+            </>
+          }
+        >
+          <video className={s.preview} src={video.url} controls playsInline muted aria-label="影片預覽" />
+          <p className={s.fileLine}>
+            {video.file.name}（{sizeLabel(video.file.size)}）
+          </p>
+        </Dialog>
       )}
 
       {phase === 'loading' && (

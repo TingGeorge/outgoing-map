@@ -835,3 +835,33 @@
     transform: rotate(360deg);
   }
 }
+
+@media (min-width: 1024px) {
+  .screen {
+    max-width: 600px;
+  }
+
+  .content:not(.bleed) {
+    padding-top: calc(max(var(--safe-top), 20px) + 40px);
+  }
+
+  .screen.widePage {
+    max-width: 1120px;
+  }
+
+  .screen.wideFull {
+    max-width: none;
+  }
+
+  .screen:has(> .content > .ridgeHeader) {
+    overflow-x: visible;
+  }
+
+  .ridgeHeader {
+    left: calc(50% - 50vw);
+    width: 100vw;
+    max-width: none;
+    height: 340px;
+    aspect-ratio: auto;
+  }
+}

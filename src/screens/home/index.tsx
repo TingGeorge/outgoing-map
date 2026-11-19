@@ -221,6 +221,7 @@ export function HomeScreen() {
 
   return (
     <Screen
+      wide="page"
       bottom={
         <Button href={href({ name: 'new' })} icon={<PlusIcon size={20} />}>
           新的回憶
