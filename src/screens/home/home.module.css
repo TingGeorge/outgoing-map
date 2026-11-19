@@ -210,6 +210,21 @@
   white-space: nowrap;
 }
 
+.headerActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.headerNew {
+  display: none;
+}
+
+.fab {
+  display: contents;
+}
+
 @media (hover: hover) {
   .recent,
   .polaroidLink {
@@ -263,9 +278,53 @@
     margin-top: 14px;
   }
 
-  .welcome,
-  .skeleton {
-    width: 100%;
-    max-width: 640px;
+  .header {
+    align-items: center;
+  }
+
+  .headerNew {
+    display: contents;
+  }
+
+  .fab {
+    display: none;
+  }
+
+  .welcome {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      'title scene'
+      'text scene'
+      'steps scene';
+    grid-template-rows: auto auto 1fr;
+    gap: 14px 48px;
+    padding: 40px 44px;
+  }
+
+  .welcomeTitle {
+    grid-area: title;
+    font-size: var(--text-3xl);
+  }
+
+  .welcomeText {
+    grid-area: text;
+  }
+
+  .steps {
+    grid-area: steps;
+    gap: 16px;
+    font-size: var(--text-lg);
+  }
+
+  .scene {
+    grid-area: scene;
+    height: auto;
+    min-height: 260px;
+  }
+
+  .scene svg {
+    aspect-ratio: auto;
+    border-radius: var(--radius-sm);
   }
 }

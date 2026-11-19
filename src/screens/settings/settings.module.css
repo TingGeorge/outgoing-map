@@ -205,3 +205,21 @@
 .toastRoom {
   height: 96px;
 }
+
+@media (min-width: 1024px) {
+  main.page {
+    display: block;
+    columns: 2;
+    column-gap: 32px;
+  }
+
+  .page > * {
+    break-inside: avoid;
+    margin-bottom: 32px;
+  }
+
+  .page > .top,
+  .page > .toastRoom {
+    column-span: all;
+  }
+}

@@ -134,3 +134,22 @@
   white-space: nowrap;
   font-weight: 700;
 }
+
+@media (min-width: 1024px) {
+  main.form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    align-content: start;
+    gap: 28px 32px;
+  }
+
+  .form > .top,
+  .form > .wideRow {
+    grid-column: 1 / -1;
+  }
+
+  .form > .section:not(.wideRow) > :global(*):nth-child(2) {
+    flex: 1;
+  }
+}

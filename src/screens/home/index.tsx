@@ -223,9 +223,11 @@ export function HomeScreen() {
     <Screen
       wide="page"
       bottom={
-        <Button href={href({ name: 'new' })} icon={<PlusIcon size={20} />}>
-          新的回憶
-        </Button>
+        <span className={s.fab}>
+          <Button href={href({ name: 'new' })} icon={<PlusIcon size={20} />}>
+            新的回憶
+          </Button>
+        </span>
       }
     >
       <Ridge />
@@ -239,9 +241,16 @@ export function HomeScreen() {
             想回味哪一座山？
           </h1>
         </div>
-        <IconButton label="設定" href={href({ name: 'settings' })}>
-          <SettingsIcon />
-        </IconButton>
+        <div className={s.headerActions}>
+          <span className={s.headerNew}>
+            <Button href={href({ name: 'new' })} icon={<PlusIcon size={20} />}>
+              新的回憶
+            </Button>
+          </span>
+          <IconButton label="設定" href={href({ name: 'settings' })}>
+            <SettingsIcon />
+          </IconButton>
+        </div>
       </header>
 
       {load.status === 'loading' && <Skeleton />}

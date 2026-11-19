@@ -73,14 +73,54 @@ test('home uses the width of the window for the trips', async ({ page }) => {
   expect(cover.width).toBeGreaterThan(narrow.width - 40)
 })
 
-test('forms stay a readable width', async ({ page }) => {
+test('new memory and settings lay their cards out in two columns, and the create button follows the form', async ({ page }) => {
   await seed(page, 0)
 
-  for (const hash of ['#/settings', '#/new']) {
-    await page.goto(`./${hash}`)
-    const main = (await page.locator('main').boundingBox())!
-    expect(main.width).toBeLessThanOrEqual(600)
-    expect(main.x + main.width / 2).toBeCloseTo(640, -1)
-    expect(await noSideScroll(page)).toBe(true)
-  }
+  await page.goto('./#/new')
+  const gpx = (await page.getByRole('heading', { name: 'GPX 檔' }).boundingBox())!
+  const photos = (await page.getByRole('heading', { name: '照片' }).boundingBox())!
+  expect(Math.abs(gpx.y - photos.y)).toBeLessThan(2)
+  expect(photos.x).toBeGreaterThan(gpx.x + 400)
+
+  const name = (await page.getByLabel('這趟的名字').boundingBox())!
+  const create = (await page.getByRole('button', { name: '建立回憶' }).boundingBox())!
+  expect(create.y).toBeGreaterThan(name.y + name.height)
+  expect(create.y - (name.y + name.height)).toBeLessThan(160)
+  expect(create.x + create.width).toBeCloseTo(name.x + name.width, -1)
+  expect(await noSideScroll(page)).toBe(true)
+
+  await page.goto('./#/settings')
+  const key = (await page.getByRole('region', { name: '地圖鑰匙' }).boundingBox())!
+  const about = (await page.getByRole('region', { name: '關於' }).boundingBox())!
+  expect(about.x).toBeGreaterThan(key.x + key.width)
+  expect(await noSideScroll(page)).toBe(true)
+})
+
+test('home with no memories yet puts the new memory button in the header and the steps beside the picture', async ({ page }) => {
+  await seed(page, 0)
+  await page.goto('./#/')
+
+  const create = page.getByRole('link', { name: '新的回憶' })
+  await expect(create).toHaveCount(1)
+  const button = (await create.boundingBox())!
+  const settings = (await page.getByRole('link', { name: '設定' }).boundingBox())!
+  expect(Math.abs(button.y + button.height / 2 - (settings.y + settings.height / 2))).toBeLessThan(4)
+
+  const steps = (await page.getByRole('list').first().boundingBox())!
+  const scene = (await page.locator('section[aria-labelledby="first-run"] svg').last().boundingBox())!
+  expect(scene.x).toBeGreaterThan(steps.x + steps.width)
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(create).toHaveCount(1)
+  expect((await create.boundingBox())!.y).toBeGreaterThan(600)
+})
+
+test('narrow screens like the key tutorial sit in the middle of the window', async ({ page }) => {
+  await page.goto('./#/welcome')
+  const main = (await page.locator('main').boundingBox())!
+  expect(main.width).toBeLessThanOrEqual(600)
+  expect(main.x + main.width / 2).toBeCloseTo(640, -1)
+  const button = (await page.getByRole('button', { name: '開始領取' }).boundingBox())!
+  expect(button.y + button.height).toBeLessThan(800)
+  expect(await noSideScroll(page)).toBe(true)
 })
