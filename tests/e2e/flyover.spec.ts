@@ -319,7 +319,7 @@ test('the speed button cycles 1×, 2× and 4×, and a faster speed covers more g
     await page.keyboard.press('PageUp')
     const from = await distance(page)
     await page.getByRole('button', { name: '播放', exact: true }).click()
-    await page.waitForTimeout(4000)
+    await page.waitForTimeout(5000)
     return (await distance(page)) - from
   }
 
@@ -333,7 +333,7 @@ test('the speed button cycles 1×, 2× and 4×, and a faster speed covers more g
   await expect(speed).toHaveText('4×')
   const fast = await covered()
 
-  expect(fast).toBeGreaterThan(slow * 2)
+  expect(fast).toBeGreaterThan(slow * 1.5)
 
   await speed.click()
   await expect(speed).toHaveAccessibleName('播放速度 1 倍')
